@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  EPISTEMEND
+  The maintenance layer Wikipedia's editors have never had on mobile.
+  Author: Zengine | epistemend.org
+  Version: 1.0.0
+  Not affiliated with the Wikimedia Foundation.
+
+  WORKFLOW STACK:
+    1. Boot: detect language, set WIKI_API_BASE + UI strings
+    2. Render landing screen with tool list
+    3. User selects tool → full-screen tool view
+    4. API calls → results rendered as verdicts, not raw data
+    5. Back button returns to landing
+
+  ASSET MANIFEST:
+    - Wikipedia Action API (prop=info|extracts|links|langlinks|images|
+      revisions|flagged, list=recentchanges|random|search|categorymembers)
+    - Wikimedia Pageviews REST API
+    - Google Fonts: DM Sans, DM Serif Display
+
+  READS:
+    - Wikipedia Action API (all tools)
+    - Wikimedia Pageviews API (Tool: Page View Pulse)
+  WRITES:
+    - sessionStorage (recent searches, per-tool cache)
+    - DOM only — no server, no database, no tracking
+
+  BOOT ORDER:
+    1. detectLanguage()
+    2. setWikiBase()
+    3. renderLanding()
+    4. Tool selected → renderTool(id)
+    5. API call → renderResult()
+
+  CONFIGURATION — change these two lines to point at any MediaWiki:
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="description" content="Seven diagnostic tools for Wikipedia editors. No login. No tracking. Free forever.">
+<title>Epistemend — First aid for the free encyclopedia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap');
+
+/* ── TOKENS ──────────────────────────────────────────── */
+:root {
+  --bg:        #0f1117;
+  --surface:   #181c27;
+  --surface2:  #1f2435;
+  --border:    rgba(255,255,255,0.08);
+  --border2:   rgba(255,255,255,0.14);
+  --text:      #e8eaf0;
+  --text2:     #8892a4;
+  --text3:     #4a5568;
+  --accent:    #4f8ef7;
+  --accent2:   #2563eb;
+  --green:     #34d399;
+  --green-bg:  rgba(52,211,153,0.10);
+  --amber:     #fbbf24;
+  --amber-bg:  rgba(251,191,36,0.10);
+  --red:       #f87171;
+  --red-bg:    rgba(248,113,113,0.10);
+  --purple:    #a78bfa;
+  --purple-bg: rgba(167,139,250,0.10);
+  --pink:      #f472b6;
+  --teal:      #2dd4bf;
+  --teal-bg:   rgba(45,212,191,0.10);
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-serif:'DM Serif Display', Georgia, serif;
+  --radius:    10px;
+  --radius-sm: 6px;
+  --trans:     0.15s ease;
+}
+
+/* ── RESET ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── LAYOUT ──────────────────────────────────────────── */
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── HEADER ──────────────────────────────────────────── */
+.ep-header {
+  padding: 20px 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.ep-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ep-logo-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.ep-wordmark {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+
+.ep-wordmark sup {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 300;
+  color: var(--text3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  vertical-align: super;
+  margin-left: 4px;
+}
+
+.ep-lang-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ep-lang-btn {
+  background: none;
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: all var(--trans);
+  letter-spacing: 0.5px;
+}
+
+.ep-lang-btn:hover { color: var(--text2); background: var(--surface); }
+.ep-lang-btn.active { color: var(--accent); font-weight: 500; }
+
+/* ── LANDING HERO ────────────────────────────────────── */
+.ep-hero {
+  padding: 28px 20px 20px;
+}
+
+.ep-hed {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.25;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: -0.3px;
+}
+
+.ep-sub {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.7;
+  margin-bottom: 16px;
+  font-weight: 300;
+}
+
+.ep-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ep-trust-pill {
+  font-size: 11px;
+  color: var(--text3);
+  border: 0.5px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+  letter-spacing: 0.3px;
+}
+
+/* ── TOOL LIST ───────────────────────────────────────── */
+.ep-tools {
+  flex: 1;
+  padding: 4px 20px 0;
+}
+
+.ep-section-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 10px;
+  padding-left: 2px;
+}
+
+.ep-tool-list {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.ep-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 14px;
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background var(--trans);
+  text-align: left;
+  border: none;
+  border-bottom: 0.5px solid var(--border);
+  width: 100%;
+  color: inherit;
+  font-family: inherit;
+}
+
+.ep-tool-row:last-child { border-bottom: none; }
+.ep-tool-row:hover { background: var(--surface2); }
+.ep-tool-row:active { background: var(--surface2); transform: scale(0.99); }
+
+.ep-tool-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ep-tool-info { flex: 1; text-align: left; }
+
+.ep-tool-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 1px;
+}
+
+.ep-new {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--green);
+  border: 0.5px solid var(--green);
+  border-radius: 99px;
+  padding: 1px 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.ep-tool-desc {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 300;
+}
+
+.ep-tool-arrow {
+  color: var(--text3);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+/* ── FOOTER ──────────────────────────────────────────── */
+.ep-footer {
+  padding: 16px 20px 24px;
+  border-top: 0.5px solid var(--border);
+  margin-top: auto;
+}
+
+.ep-disclaimer {
+  font-size: 11px;
+  color: var(--text3);
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+
+.ep-desktop-link {
+  font-size: 11px;
+  color: var(--text3);
+  text-decoration: none;
+}
+.ep-desktop-link:hover { color: var(--text2); text-decoration: underline; }
+
+/* ── TOOL SCREEN ─────────────────────────────────────── */
+.tool-screen {
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.tool-screen.active { display: flex; }
+
+.tool-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.back-btn {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  color: var(--text2);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--trans);
+  flex-shrink: 0;
+}
+.back-btn:hover { color: var(--text); border-color: var(--border2); }
+
+.tool-title-block { flex: 1; }
+
+.tool-title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.tool-subtitle {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 1px;
+}
+
+.tool-body {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* ── INPUT ZONE ──────────────────────────────────────── */
+.input-zone {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  align-items: stretch;
+}
+
+.ep-input {
+  flex: 1;
+  background: var(--surface);
+  border: 0.5px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 10px 13px;
+  outline: none;
+  transition: border-color var(--trans);
+}
+
+.ep-input:focus { border-color: var(--accent); }
+.ep-input::placeholder { color: var(--text3); }
+
+.dice-btn {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  color: var(--text3);
+  font-size: 16px;
+  width: 40px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--trans);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dice-btn:hover { color: var(--text2); border-color: var(--border2); }
+
+.go-btn {
+  background: var(--accent2);
+  border: none;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--trans);
+  flex-shrink: 0;
+}
+.go-btn:hover { background: var(--accent); }
+.go-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── RESULT CARDS ────────────────────────────────────── */
+.result-area { display: flex; flex-direction: column; gap: 10px; }
+
+.result-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.result-card-title {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+
+.result-value {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.result-label {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 3px;
+  font-weight: 300;
+}
+
+.verdict-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.verdict-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+.verdict-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.verdict-text { flex: 1; font-size: 13px; color: var(--text); }
+.verdict-val { font-size: 13px; font-weight: 500; }
+
+.status-good  { color: var(--green); }
+.status-warn  { color: var(--amber); }
+.status-bad   { color: var(--red); }
+.status-info  { color: var(--accent); }
+.status-purple{ color: var(--purple); }
+
+.dot-good   { background: var(--green); }
+.dot-warn   { background: var(--amber); }
+.dot-bad    { background: var(--red); }
+.dot-info   { background: var(--accent); }
+.dot-purple { background: var(--purple); }
+.dot-teal   { background: var(--teal); }
+.dot-pink   { background: var(--pink); }
+
+/* ── HEALTH SCORE BAR ────────────────────────────────── */
+.score-bar-wrap { margin: 12px 0 4px; }
+
+.score-bar-track {
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+
+.score-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+/* ── LIVE FEED (VANDALISM HUNTER) ────────────────────── */
+.feed-list { display: flex; flex-direction: column; gap: 8px; }
+
+.feed-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  position: relative;
+  overflow: hidden;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.feed-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+
+.feed-card.high::before  { background: var(--red); }
+.feed-card.med::before   { background: var(--amber); }
+.feed-card.low::before   { background: var(--border2); }
+
+.feed-card.judged { opacity: 0.4; pointer-events: none; }
+
+.feed-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 5px;
+}
+
+.feed-article {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  flex: 1;
+  padding-right: 10px;
+  line-height: 1.3;
+}
+
+.feed-time {
+  font-size: 11px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
+.feed-meta {
+  font-size: 11px;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+
+.feed-comment {
+  font-size: 12px;
+  color: var(--text2);
+  font-style: italic;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  min-height: 14px;
+}
+
+.feed-susp {
+  height: 3px;
+  background: var(--surface2);
+  border-radius: 99px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.feed-susp-fill {
+  height: 100%;
+  border-radius: 99px;
+}
+
+.feed-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.feed-btn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 0.5px solid;
+  background: transparent;
+  transition: all var(--trans);
+  letter-spacing: 0.3px;
+}
+
+.feed-btn.vandal { color: var(--red); border-color: var(--red); }
+.feed-btn.vandal:hover { background: var(--red-bg); }
+.feed-btn.clean  { color: var(--green); border-color: var(--green); }
+.feed-btn.clean:hover  { background: var(--green-bg); }
+
+.poll-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.poll-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text3);
+  transition: all 0.3s;
+}
+
+.poll-dot.live {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.vandal-score {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+}
+
+.vs-block { text-align: center; }
+.vs-val {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  line-height: 1;
+  display: block;
+}
+.vs-label { font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── EDITOR REPUTATION ───────────────────────────────── */
+.rep-state-0, .rep-state-1, .rep-state-2 { display: flex; flex-direction: column; gap: 10px; }
+
+.encourage-card {
+  background: var(--green-bg);
+  border: 0.5px solid var(--green);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.encourage-title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  color: var(--green);
+  margin-bottom: 6px;
+}
+
+.encourage-body {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.7;
+  font-weight: 300;
+}
+
+.encourage-cta {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.caution-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.7;
+  font-style: italic;
+  font-weight: 300;
+}
+
+/* ── RED LINK HARVESTER ──────────────────────────────── */
+.red-link-list { display: flex; flex-direction: column; gap: 6px; }
+
+.red-link-item {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.red-link-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--pink);
+  flex-shrink: 0;
+}
+
+.red-link-title {
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+}
+
+.red-link-badge {
+  font-size: 10px;
+  color: var(--pink);
+  border: 0.5px solid var(--pink);
+  border-radius: 99px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
+/* ── GAP FINDER ──────────────────────────────────────── */
+.gap-item {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.gap-langs {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  color: var(--teal);
+  min-width: 36px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.gap-title { font-size: 13px; color: var(--text); flex: 1; }
+
+.gap-bar {
+  width: 40px;
+  height: 3px;
+  background: var(--surface2);
+  border-radius: 99px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.gap-bar-fill {
+  height: 100%;
+  background: var(--teal);
+  border-radius: 99px;
+}
+
+/* ── PAGEVIEW PULSE ──────────────────────────────────── */
+.pulse-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 60px;
+  padding: 0 2px;
+  margin: 12px 0 6px;
+}
+
+.pulse-bar-item {
+  flex: 1;
+  background: var(--accent2);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  opacity: 0.7;
+  transition: opacity var(--trans);
+  position: relative;
+}
+.pulse-bar-item:hover { opacity: 1; }
+
+/* ── WHAT COULD USE AN EDIT ──────────────────────────── */
+.maintenance-item {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background var(--trans);
+}
+.maintenance-item:hover { background: var(--surface2); }
+
+.maint-title { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 5px; }
+
+.maint-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.maint-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 0.5px solid;
+}
+
+.tag-stub    { color: var(--amber);  border-color: var(--amber);  background: var(--amber-bg); }
+.tag-cite    { color: var(--red);    border-color: var(--red);    background: var(--red-bg); }
+.tag-cleanup { color: var(--purple); border-color: var(--purple); background: var(--purple-bg); }
+.tag-expand  { color: var(--teal);   border-color: var(--teal);   background: var(--teal-bg); }
+.tag-default { color: var(--text3);  border-color: var(--border); background: transparent; }
+
+/* ── LOADING ─────────────────────────────────────────── */
+.ep-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: var(--text3);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.ep-spinner {
+  width: 24px; height: 24px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ep-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text3);
+  font-size: 13px;
+  font-weight: 300;
+}
+
+/* ── RECENT SEARCHES ─────────────────────────────────── */
+.recent-wrap { margin-bottom: 14px; }
+
+.recent-label {
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.recent-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.recent-chip {
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all var(--trans);
+}
+.recent-chip:hover { color: var(--text); border-color: var(--border2); }
+
+/* ── FLASH SCORE ─────────────────────────────────────── */
+.flash-score {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-serif);
+  font-size: 36px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: flashOut 1s ease-out forwards;
+}
+
+@keyframes flashOut {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(0.8); }
+}
+
+/* ── UTILITY ─────────────────────────────────────────── */
+.hidden { display: none !important; }
+.mt8 { margin-top: 8px; }
+.mt12 { margin-top: 12px; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- LANDING                                          -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="landing">
+
+    <div class="ep-header">
+      <div class="ep-logo">
+        <!-- LOGO: shield + pen nib + checkmark -->
+        <svg class="ep-logo-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22 3 L40 10 L40 24 C40 33 32 40 22 44 C12 40 4 33 4 24 L4 10 Z" fill="#1e2535" stroke="rgba(255,255,255,0.12)" stroke-width="0.5"/>
+          <rect x="19.5" y="8" width="5" height="8" rx="2.5" fill="#4f8ef7"/>
+          <path d="M19.5 16 L15 26 L22 23 L29 26 L24.5 16 Z" fill="#4f8ef7"/>
+          <circle cx="22" cy="23" r="1.5" fill="#1e2535"/>
+          <line x1="22" y1="24.5" x2="22" y2="28" stroke="#4f8ef7" stroke-width="1.5"/>
+          <path d="M15 31 L20 36 L30 25" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="ep-wordmark">Epistemend<sup>beta</sup></div>
+      </div>
+      <div class="ep-lang-row" id="langRow"></div>
+    </div>
+
+    <div class="ep-hero">
+      <h1 class="ep-hed" id="heroHed">The maintenance layer Wikipedia's editors have never had on mobile.</h1>
+      <p class="ep-sub" id="heroSub">Seven diagnostic tools built on the public Wikipedia API. No login. No tracking. No data collected. Your browser does all the work.</p>
+      <div class="ep-trust">
+        <span class="ep-trust-pill" id="pill1">Open source · MIT</span>
+        <span class="ep-trust-pill" id="pill2">EN · ES · FR · DE · JA</span>
+        <span class="ep-trust-pill" id="pill3">Not affiliated with Wikimedia</span>
+      </div>
+    </div>
+
+    <div class="ep-tools">
+      <div class="ep-section-label" id="toolsSectionLabel">Tools</div>
+      <div class="ep-tool-list" id="toolList"></div>
+    </div>
+
+    <div class="ep-footer">
+      <p class="ep-disclaimer" id="footerDisclaimer">Not affiliated with the Wikimedia Foundation. Open source under MIT license. epistemend.org</p>
+      <a class="ep-desktop-link" href="javascript:void(0)" id="desktopLink">Switch to desktop view ↗</a>
+    </div>
+
+  </div><!-- /landing -->
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- TOOL SCREENS (one per tool)                      -->
+  <!-- ═══════════════════════════════════════════════ -->
+
+  <!-- T1: Article Health Scan -->
+  <div id="screen-health" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t1-title">Article Health Scan</div>
+        <div class="tool-subtitle" id="t1-sub">Full diagnostic on any Wikipedia article</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="recent-wrap hidden" id="t1-recent">
+        <div class="recent-label" id="t1-recent-label">Recent</div>
+        <div class="recent-chips" id="t1-recent-chips"></div>
+      </div>
+      <div class="input-zone">
+        <input class="ep-input" id="t1-input" placeholder="e.g. Marie Curie" type="text" onkeydown="if(event.key==='Enter')runHealthScan()">
+        <button class="dice-btn" title="Random article" onclick="randomArticle('t1-input')">⚄</button>
+        <button class="go-btn" onclick="runHealthScan()" id="t1-go">Scan</button>
+      </div>
+      <div id="t1-result"></div>
+    </div>
+  </div>
+
+  <!-- P1: Vandalism Hunter -->
+  <div id="screen-vandal" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t2-title">Vandalism Hunter</div>
+        <div class="tool-subtitle" id="t2-sub">Live recent-changes stream with suspicion scoring</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="vandal-score">
+        <div class="vs-block"><span class="vs-val status-good" id="v-correct">0</span><span class="vs-label">Correct</span></div>
+        <div class="vs-block"><span class="vs-val" id="v-streak">0×</span><span class="vs-label">Streak</span></div>
+        <div class="vs-block"><span class="vs-val status-bad" id="v-lives">❤ 5</span><span class="vs-label">Lives</span></div>
+        <div class="vs-block"><span class="vs-val status-info" id="v-score">0</span><span class="vs-label">Score</span></div>
+      </div>
+      <div class="poll-bar">
+        <div class="poll-dot" id="pollDot"></div>
+        <span id="pollStatus">Connecting...</span>
+      </div>
+      <div class="feed-list" id="feedList">
+        <div class="ep-loading"><div class="ep-spinner"></div><span id="t2-loading-label">Loading feed</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- P2: Editor Reputation Auditor -->
+  <div id="screen-rep" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t3-title">Editor Reputation Auditor</div>
+        <div class="tool-subtitle" id="t3-sub">Edit history patterns for any username or IP</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="recent-wrap hidden" id="t3-recent">
+        <div class="recent-label" id="t3-recent-label">Recent</div>
+        <div class="recent-chips" id="t3-recent-chips"></div>
+      </div>
+      <div class="input-zone">
+        <input class="ep-input" id="t3-input" placeholder="e.g. Jimbo Wales" type="text" onkeydown="if(event.key==='Enter')runRepAudit()">
+        <button class="go-btn" onclick="runRepAudit()">Audit</button>
+      </div>
+      <div id="t3-result"></div>
+    </div>
+  </div>
+
+  <!-- C1: Topic Gap Finder -->
+  <div id="screen-gap" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t4-title">Topic Gap Finder</div>
+        <div class="tool-subtitle" id="t4-sub">Articles underrepresented across language editions</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="recent-wrap hidden" id="t4-recent">
+        <div class="recent-label">Recent</div>
+        <div class="recent-chips" id="t4-recent-chips"></div>
+      </div>
+      <div class="input-zone">
+        <input class="ep-input" id="t4-input" placeholder="e.g. Women scientists" type="text" onkeydown="if(event.key==='Enter')runGapFinder()">
+        <button class="dice-btn" title="Random category" onclick="randomCategory('t4-input')">⚄</button>
+        <button class="go-btn" onclick="runGapFinder()">Find</button>
+      </div>
+      <div id="t4-result"></div>
+    </div>
+  </div>
+
+  <!-- V1: Page View Pulse -->
+  <div id="screen-pulse" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t5-title">Page View Pulse</div>
+        <div class="tool-subtitle" id="t5-sub">30-day traffic trend from the Pageviews API</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="recent-wrap hidden" id="t5-recent">
+        <div class="recent-label">Recent</div>
+        <div class="recent-chips" id="t5-recent-chips"></div>
+      </div>
+      <div class="input-zone">
+        <input class="ep-input" id="t5-input" placeholder="e.g. Climate change" type="text" onkeydown="if(event.key==='Enter')runPulse()">
+        <button class="dice-btn" title="Random article" onclick="randomArticle('t5-input')">⚄</button>
+        <button class="go-btn" onclick="runPulse()">Pulse</button>
+      </div>
+      <div id="t5-result"></div>
+    </div>
+  </div>
+
+  <!-- C3: Red Link Harvester -->
+  <div id="screen-redlink" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t6-title">Red Link Harvester</div>
+        <div class="tool-subtitle" id="t6-sub">Surfaces missing articles within any Wikipedia page</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="recent-wrap hidden" id="t6-recent">
+        <div class="recent-label">Recent</div>
+        <div class="recent-chips" id="t6-recent-chips"></div>
+      </div>
+      <div class="input-zone">
+        <input class="ep-input" id="t6-input" placeholder="e.g. History of jazz" type="text" onkeydown="if(event.key==='Enter')runRedLink()">
+        <button class="dice-btn" title="Random article" onclick="randomArticle('t6-input')">⚄</button>
+        <button class="go-btn" onclick="runRedLink()">Harvest</button>
+      </div>
+      <div id="t6-result"></div>
+    </div>
+  </div>
+
+  <!-- T2: What Could Use An Edit -->
+  <div id="screen-edit" class="tool-screen">
+    <div class="tool-header">
+      <button class="back-btn" onclick="showLanding()">← Back</button>
+      <div class="tool-title-block">
+        <div class="tool-title" id="t7-title">What Could Use An Edit</div>
+        <div class="tool-subtitle" id="t7-sub">Maintenance-flagged articles needing attention</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="input-zone">
+        <input class="ep-input" id="t7-input" placeholder="e.g. science, history..." type="text" onkeydown="if(event.key==='Enter')runNeedsEdit()">
+        <button class="dice-btn" title="Random topic" onclick="randomTopic('t7-input')">⚄</button>
+        <button class="go-btn" onclick="runNeedsEdit()">Find</button>
+      </div>
+      <div id="t7-result"></div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ============================================================
+// EPISTEMEND v1.0.0
+// Not affiliated with the Wikimedia Foundation.
+// No login. No tracking. No data collected.
+// Open source · MIT · epistemend.org
+// ============================================================
+
+// DECISION: WIKI_API_BASE and WIKI_LANG are the only two
+// variables that need changing to point at any MediaWiki.
+var WIKI_API_BASE = 'https://en.wikipedia.org/w/api.php';
+var WIKI_LANG = 'en';
+
+// ── LANGUAGE STRINGS ────────────────────────────────────────
+// READS: navigator.language
+// WRITES: S (active string set), WIKI_API_BASE, WIKI_LANG
+var WIKI_BASES = {
+  en: 'https://en.wikipedia.org/w/api.php',
+  es: 'https://es.wikipedia.org/w/api.php',
+  fr: 'https://fr.wikipedia.org/w/api.php',
+  de: 'https://de.wikipedia.org/w/api.php',
+  ja: 'https://ja.wikipedia.org/w/api.php'
+};
+
+var STRINGS = {
+  en: {
+    hed: "The maintenance layer Wikipedia's editors have never had on mobile.",
+    sub: "Seven diagnostic tools built on the public Wikipedia API. No login. No tracking. No data collected. Your browser does all the work.",
+    toolsLabel: 'Tools',
+    disclaimer: 'Not affiliated with the Wikimedia Foundation. Open source under MIT license.',
+    desktopLink: 'Switch to desktop view ↗',
+    randomBtn: '⚄',
+    back: '← Back',
+    loading: 'Loading...',
+    noResults: 'No results found.',
+    tools: [
+      { name: 'Article health scan',      desc: 'Full diagnostic — flags, refs, editors, readability' },
+      { name: 'Vandalism hunter',         desc: 'Live recent-changes stream with suspicion scoring' },
+      { name: 'Editor reputation auditor',desc: 'Edit history patterns for any username or IP' },
+      { name: 'Topic gap finder',         desc: 'Articles underrepresented across language editions' },
+      { name: 'Page view pulse',          desc: '30-day traffic trend from the Pageviews API' },
+      { name: 'Red link harvester',       desc: 'Surfaces missing articles within any Wikipedia page', isNew: true },
+      { name: 'What could use an edit',   desc: 'Maintenance-flagged articles needing attention' }
+    ]
+  },
+  es: {
+    hed: "La capa de mantenimiento que los editores de Wikipedia nunca tuvieron en móvil.",
+    sub: "Siete herramientas diagnósticas sobre la API pública de Wikipedia. Sin inicio de sesión. Sin rastreo. Sin datos recopilados.",
+    toolsLabel: 'Herramientas',
+    disclaimer: 'No afiliado con la Fundación Wikimedia. Código abierto bajo licencia MIT.',
+    desktopLink: 'Ver versión escritorio ↗',
+    back: '← Volver',
+    loading: 'Cargando...',
+    noResults: 'No se encontraron resultados.',
+    tools: [
+      { name: 'Diagnóstico de artículo',      desc: 'Análisis completo: avisos, referencias, editores' },
+      { name: 'Cazador de vandalismo',         desc: 'Stream en vivo de cambios recientes con puntuación' },
+      { name: 'Auditor de reputación',         desc: 'Patrones del historial de ediciones de un usuario' },
+      { name: 'Buscador de brechas temáticas', desc: 'Artículos poco representados en otros idiomas' },
+      { name: 'Pulso de visitas',              desc: 'Tendencia de tráfico de los últimos 30 días' },
+      { name: 'Cosechador de enlaces rojos',   desc: 'Artículos inexistentes dentro de una página', isNew: true },
+      { name: 'Qué necesita edición',          desc: 'Artículos con avisos de mantenimiento' }
+    ]
+  },
+  fr: {
+    hed: "La couche de maintenance que les éditeurs de Wikipédia n'ont jamais eue sur mobile.",
+    sub: "Sept outils de diagnostic construits sur l'API publique de Wikipédia. Aucune connexion. Aucun suivi. Aucune donnée collectée.",
+    toolsLabel: 'Outils',
+    disclaimer: "Non affilié à la Fondation Wikimédia. Open source sous licence MIT.",
+    desktopLink: 'Passer en vue bureau ↗',
+    back: '← Retour',
+    loading: 'Chargement...',
+    noResults: 'Aucun résultat.',
+    tools: [
+      { name: "Analyse de santé d'article",    desc: 'Diagnostic complet : avertissements, refs, éditeurs' },
+      { name: 'Chasseur de vandalisme',         desc: 'Flux en direct des modifications récentes' },
+      { name: 'Auditeur de réputation',         desc: "Modèles d'historique d'édition d'un utilisateur" },
+      { name: 'Détecteur de lacunes',           desc: 'Articles sous-représentés dans d\'autres langues' },
+      { name: 'Pouls des pages vues',           desc: 'Tendance du trafic sur 30 jours' },
+      { name: 'Récolteur de liens rouges',      desc: 'Articles manquants dans une page', isNew: true },
+      { name: 'Ce qui nécessite une édition',   desc: 'Articles avec avertissements de maintenance' }
+    ]
+  },
+  de: {
+    hed: "Die Wartungsebene, die Wikipedia-Redakteure auf dem Handy nie hatten.",
+    sub: "Sieben Diagnose-Werkzeuge auf Basis der öffentlichen Wikipedia-API. Kein Login. Kein Tracking. Keine Datenspeicherung.",
+    toolsLabel: 'Werkzeuge',
+    disclaimer: 'Nicht mit der Wikimedia Foundation verbunden. Open Source unter MIT-Lizenz.',
+    desktopLink: 'Desktop-Ansicht ↗',
+    back: '← Zurück',
+    loading: 'Lädt...',
+    noResults: 'Keine Ergebnisse.',
+    tools: [
+      { name: 'Artikel-Gesundheitsscan',     desc: 'Vollständige Diagnose: Wartungsbausteine, Refs' },
+      { name: 'Vandalismus-Jäger',           desc: 'Live-Stream letzter Änderungen mit Bewertung' },
+      { name: 'Reputationsprüfer',           desc: 'Bearbeitungsmuster für Benutzernamen oder IP' },
+      { name: 'Themenlücken-Finder',         desc: 'Artikel in wenigen Sprachversionen vorhanden' },
+      { name: 'Seitenaufruf-Puls',           desc: '30-Tage-Trend aus der Seitenaufruf-API' },
+      { name: 'Roter-Link-Ernte',            desc: 'Fehlende Artikel innerhalb einer Wikipedia-Seite', isNew: true },
+      { name: 'Was braucht eine Bearbeitung',desc: 'Artikel mit Wartungsbausteinen' }
+    ]
+  },
+  ja: {
+    hed: "ウィキペディア編集者がモバイルで持てなかったメンテナンス層。",
+    sub: "公開WikipediaAPIで構築された7つの診断ツール。ログイン不要。追跡なし。データ収集なし。",
+    toolsLabel: 'ツール',
+    disclaimer: 'ウィキメディア財団とは無関係です。MITライセンスのオープンソース。',
+    desktopLink: 'デスクトップ表示 ↗',
+    back: '← 戻る',
+    loading: '読み込み中...',
+    noResults: '結果が見つかりませんでした。',
+    tools: [
+      { name: '記事の健康スキャン',     desc: 'メンテナンスフラグ・参照・編集者の完全診断' },
+      { name: 'バンダリズムハンター',   desc: '疑惑スコア付きのリアルタイム変更ストリーム' },
+      { name: '編集者評価監査',         desc: 'ユーザー名またはIPの編集履歴パターン' },
+      { name: 'トピックギャップ検索',   desc: '他言語版に少ない記事を発見' },
+      { name: 'ページビューパルス',     desc: 'ページビューAPIによる30日間のトレンド' },
+      { name: '赤リンク収穫機',         desc: 'Wikipedia内の存在しない記事を発見', isNew: true },
+      { name: '編集が必要な記事',       desc: 'メンテナンスフラグが付いた記事' }
+    ]
+  }
+};
+
+// Tool IDs in order
+var TOOL_IDS = ['health','vandal','rep','gap','pulse','redlink','edit'];
+// Tool dot colors
+var TOOL_COLORS = ['#4f8ef7','#f87171','#a78bfa','#2dd4bf','#fbbf24','#f472b6','#34d399'];
+
+var S = STRINGS['en'];
+var currentLang = 'en';
+
+// ── LANGUAGE SETUP ───────────────────────────────────────────
+// READS: navigator.language, sessionStorage.lang
+// WRITES: WIKI_LANG, WIKI_API_BASE, S
+function detectLanguage() {
+  var stored = sessionStorage.getItem('ep_lang');
+  var detected = stored || navigator.language.slice(0, 2);
+  setLanguage(STRINGS[detected] ? detected : 'en');
+}
+
+function setLanguage(lang) {
+  currentLang = lang;
+  WIKI_LANG = lang;
+  WIKI_API_BASE = WIKI_BASES[lang] || WIKI_BASES['en'];
+  S = STRINGS[lang];
+  sessionStorage.setItem('ep_lang', lang);
+  renderLanding();
+  renderLangButtons();
+}
+
+function renderLangButtons() {
+  var row = document.getElementById('langRow');
+  row.innerHTML = '';
+  Object.keys(WIKI_BASES).forEach(function(l) {
+    var btn = document.createElement('button');
+    btn.className = 'ep-lang-btn' + (l === currentLang ? ' active' : '');
+    btn.textContent = l.toUpperCase();
+    btn.onclick = function() { setLanguage(l); };
+    row.appendChild(btn);
+  });
+}
+
+// ── LANDING RENDER ───────────────────────────────────────────
+// WRITES: DOM
+function renderLanding() {
+  document.getElementById('heroHed').textContent = S.hed;
+  document.getElementById('heroSub').textContent = S.sub;
+  document.getElementById('toolsSectionLabel').textContent = S.toolsLabel;
+  document.getElementById('footerDisclaimer').textContent = S.disclaimer;
+  document.getElementById('desktopLink').textContent = S.desktopLink;
+
+  var list = document.getElementById('toolList');
+  list.innerHTML = '';
+  S.tools.forEach(function(t, i) {
+    var btn = document.createElement('button');
+    btn.className = 'ep-tool-row';
+    btn.innerHTML =
+      '<div class="ep-tool-dot" style="background:' + TOOL_COLORS[i] + '"></div>' +
+      '<div class="ep-tool-info">' +
+        '<div class="ep-tool-name">' + escH(t.name) +
+          (t.isNew ? '<span class="ep-new">new</span>' : '') +
+        '</div>' +
+        '<div class="ep-tool-desc">' + escH(t.desc) + '</div>' +
+      '</div>' +
+      '<div class="ep-tool-arrow">›</div>';
+    btn.onclick = function() { openTool(TOOL_IDS[i]); };
+    list.appendChild(btn);
+  });
+}
+
+// ── NAVIGATION ───────────────────────────────────────────────
+// WRITES: DOM visibility
+function openTool(id) {
+  document.getElementById('landing').style.display = 'none';
+  document.querySelectorAll('.tool-screen').forEach(function(s) { s.classList.remove('active'); });
+  var screen = document.getElementById('screen-' + id);
+  if (screen) {
+    screen.classList.add('active');
+    if (id === 'vandal') initVandal();
+  }
+}
+
+function showLanding() {
+  stopVandal();
+  document.getElementById('landing').style.display = '';
+  document.querySelectorAll('.tool-screen').forEach(function(s) { s.classList.remove('active'); });
+}
+
+// ── WIKIPEDIA API ────────────────────────────────────────────
+// READS: Wikipedia Action API
+function wikiAPI(params, base) {
+  var url = (base || WIKI_API_BASE) + '?origin=*&format=json';
+  for (var k in params) { url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }
+  return fetch(url).then(function(r) { return r.json(); });
+}
+
+// ── RANDOM HELPERS ───────────────────────────────────────────
+// READS: list=random
+function randomArticle(inputId) {
+  var btn = document.querySelector('[onclick*="' + inputId + '"]');
+  wikiAPI({ action:'query', list:'random', rnnamespace:'0', rnlimit:'1' })
+    .then(function(d) {
+      var el = document.getElementById(inputId);
+      if (el) el.value = d.query.random[0].title;
+    });
+}
+
+// READS: list=allcategories
+function randomCategory(inputId) {
+  wikiAPI({ action:'query', list:'allcategories', acmin:'10', aclimit:'1', acdir:'ascending', acfrom: String.fromCharCode(65 + Math.floor(Math.random() * 26)) })
+    .then(function(d) {
+      var el = document.getElementById(inputId);
+      if (el && d.query && d.query.allcategories && d.query.allcategories.length) {
+        el.value = d.query.allcategories[0]['*'];
+      }
+    });
+}
+
+function randomTopic(inputId) {
+  var topics = ['science','history','art','music','sports','technology','literature','geography','philosophy','mathematics'];
+  var el = document.getElementById(inputId);
+  if (el) el.value = topics[Math.floor(Math.random() * topics.length)];
+}
+
+// ── SESSION STORAGE: RECENT SEARCHES ────────────────────────
+// READS/WRITES: sessionStorage (stays on device, not tracking)
+function saveRecent(key, val) {
+  try {
+    var arr = JSON.parse(sessionStorage.getItem('ep_recent_' + key) || '[]');
+    arr = [val].concat(arr.filter(function(v) { return v !== val; })).slice(0, 5);
+    sessionStorage.setItem('ep_recent_' + key, JSON.stringify(arr));
+  } catch(e) {}
+}
+
+function loadRecent(key) {
+  try { return JSON.parse(sessionStorage.getItem('ep_recent_' + key) || '[]'); } catch(e) { return []; }
+}
+
+function renderRecent(key, inputId, runFn) {
+  var arr = loadRecent(key);
+  var wrap = document.getElementById(key + '-recent');
+  var chips = document.getElementById(key + '-recent-chips');
+  if (!wrap || !chips || !arr.length) return;
+  wrap.classList.remove('hidden');
+  chips.innerHTML = '';
+  arr.forEach(function(v) {
+    var chip = document.createElement('span');
+    chip.className = 'recent-chip';
+    chip.textContent = v;
+    chip.onclick = function() {
+      document.getElementById(inputId).value = v;
+      runFn();
+    };
+    chips.appendChild(chip);
+  });
+}
+
+// ── TOOL 1: ARTICLE HEALTH SCAN ─────────────────────────────
+// READS: prop=info|extracts|links|categories|images|references
+function runHealthScan() {
+  var title = document.getElementById('t1-input').value.trim();
+  if (!title) return;
+  saveRecent('t1', title);
+  renderRecent('t1', 't1-input', runHealthScan);
+
+  var out = document.getElementById('t1-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div><span>' + escH(S.loading || 'Loading...') + '</span></div>';
+
+  wikiAPI({
+    action: 'query',
+    titles: title,
+    prop: 'info|extracts|links|categories|images|revisions',
+    exintro: '1',
+    exsentences: '3',
+    explaintext: '1',
+    pllimit: '50',
+    clshow: '!hidden',
+    cllimit: '50',
+    imlimit: '50',
+    rvprop: 'timestamp',
+    rvlimit: '1'
+  }).then(function(data) {
+    var pages = data.query.pages;
+    var id = Object.keys(pages)[0];
+    var p = pages[id];
+
+    if (id === '-1') {
+      out.innerHTML = '<div class="ep-empty">Article not found.</div>';
+      return;
+    }
+
+    var wordCount = Math.floor((p.length || 0) / 5);
+    var cats = (p.categories || []);
+    var links = (p.links || []).length;
+    var images = (p.images || []).length;
+    var lastRev = p.revisions && p.revisions[0] ? p.revisions[0].timestamp : null;
+    var lastEdit = lastRev ? new Date(lastRev).toLocaleDateString() : 'Unknown';
+
+    // Maintenance flag detection
+    var maintenanceTags = [];
+    cats.forEach(function(c) {
+      var n = c.title.toLowerCase();
+      if (n.includes('stub')) maintenanceTags.push({ label: 'Stub', cls: 'status-warn' });
+      if (n.includes('citation needed') || n.includes('references')) maintenanceTags.push({ label: 'Needs citations', cls: 'status-bad' });
+      if (n.includes('cleanup') || n.includes('improve')) maintenanceTags.push({ label: 'Needs cleanup', cls: 'status-warn' });
+      if (n.includes('orphan')) maintenanceTags.push({ label: 'Orphaned', cls: 'status-warn' });
+    });
+
+    // Health score (0–100)
+    var score = 50;
+    if (wordCount > 500) score += 15;
+    if (wordCount > 2000) score += 10;
+    if (images > 0) score += 10;
+    if (links > 10) score += 10;
+    if (maintenanceTags.length === 0) score += 10;
+    if (maintenanceTags.length > 2) score -= 20;
+    if (maintenanceTags.length > 0) score -= 10;
+    score = Math.max(5, Math.min(100, score));
+
+    var scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--red)';
+    var scoreLabel = score >= 70 ? 'Healthy' : score >= 40 ? 'Needs attention' : 'Critically neglected';
+
+    var verdicts = [
+      { label: 'Word count', val: wordCount.toLocaleString(), cls: wordCount > 500 ? 'status-good' : 'status-warn', dot: wordCount > 500 ? 'dot-good' : 'dot-warn' },
+      { label: 'Outbound links', val: links, cls: links > 10 ? 'status-good' : 'status-warn', dot: links > 10 ? 'dot-good' : 'dot-warn' },
+      { label: 'Images', val: images, cls: images > 0 ? 'status-good' : 'status-warn', dot: images > 0 ? 'dot-good' : 'dot-warn' },
+      { label: 'Last edited', val: lastEdit, cls: 'status-info', dot: 'dot-info' },
+      { label: 'Maintenance flags', val: maintenanceTags.length || 'None', cls: maintenanceTags.length ? 'status-bad' : 'status-good', dot: maintenanceTags.length ? 'dot-bad' : 'dot-good' }
+    ];
+
+    var extract = (p.extract || '').slice(0, 200);
+
+    out.innerHTML =
+      '<div class="result-area">' +
+        '<div class="result-card">' +
+          '<div class="result-card-title">Health Score</div>' +
+          '<div class="result-value" style="color:' + scoreColor + '">' + score + '/100</div>' +
+          '<div class="result-label">' + scoreLabel + '</div>' +
+          '<div class="score-bar-wrap">' +
+            '<div class="score-bar-track"><div class="score-bar-fill" style="width:' + score + '%;background:' + scoreColor + '"></div></div>' +
+            '<div class="score-bar-label"><span>0</span><span>100</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="result-card">' +
+          '<div class="result-card-title">Article</div>' +
+          '<div class="result-value" style="font-size:16px;margin-bottom:6px">' + escH(p.title) + '</div>' +
+          (extract ? '<div class="result-label">' + escH(extract) + '…</div>' : '') +
+        '</div>' +
+        '<div class="result-card">' +
+          '<div class="result-card-title">Diagnostics</div>' +
+          verdicts.map(function(v) {
+            return '<div class="verdict-row">' +
+              '<div class="verdict-dot ' + v.dot + '"></div>' +
+              '<div class="verdict-text">' + v.label + '</div>' +
+              '<div class="verdict-val ' + v.cls + '">' + v.val + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+        (maintenanceTags.length ? '<div class="result-card"><div class="result-card-title">Flags detected</div>' +
+          maintenanceTags.map(function(t) { return '<div class="verdict-row"><div class="verdict-dot dot-bad"></div><div class="verdict-text ' + t.cls + '">' + t.label + '</div></div>'; }).join('') +
+          '</div>' : '') +
+      '</div>';
+  }).catch(function() {
+    out.innerHTML = '<div class="ep-empty">Could not reach Wikipedia. Check connection.</div>';
+  });
+}
+
+// ── TOOL 2: VANDALISM HUNTER ─────────────────────────────────
+// READS: list=recentchanges, rcprop=title|user|comment|flags|sizes|timestamp|ids
+var vandalState = { score:0, correct:0, streak:0, lives:5, seenIds:{}, pollTimer:null };
+
+function initVandal() {
+  vandalState = { score:0, correct:0, streak:0, lives:5, seenIds:{}, pollTimer:null };
+  updateVandalHUD();
+  document.getElementById('feedList').innerHTML = '';
+  fetchChanges();
+  vandalState.pollTimer = setInterval(fetchChanges, 12000);
+}
+
+function stopVandal() {
+  if (vandalState.pollTimer) { clearInterval(vandalState.pollTimer); vandalState.pollTimer = null; }
+}
+
+function updateVandalHUD() {
+  document.getElementById('v-score').textContent = vandalState.score;
+  document.getElementById('v-correct').textContent = vandalState.correct;
+  document.getElementById('v-streak').textContent = vandalState.streak + '×';
+  document.getElementById('v-lives').textContent = '❤ ' + vandalState.lives;
+}
+
+// READS: list=recentchanges
+function fetchChanges() {
+  var dot = document.getElementById('pollDot');
+  var status = document.getElementById('pollStatus');
+  dot.classList.remove('live');
+  status.textContent = 'Fetching...';
+
+  wikiAPI({
+    action: 'query',
+    list: 'recentchanges',
+    rcprop: 'title|user|comment|flags|sizes|timestamp|ids',
+    rcnamespace: '0',
+    rclimit: '10',
+    rctype: 'edit'
+  }).then(function(data) {
+    dot.classList.add('live');
+    status.textContent = 'Live';
+    var changes = (data.query && data.query.recentchanges) || [];
+    changes.forEach(function(edit) {
+      var uid = edit.rcid || (edit.title + edit.timestamp);
+      if (!vandalState.seenIds[uid]) {
+        vandalState.seenIds[uid] = true;
+        addFeedCard(edit);
+      }
+    });
+    trimFeed();
+  }).catch(function() {
+    status.textContent = 'Retrying...';
+  });
+}
+
+function addFeedCard(edit) {
+  var analysis = assessEdit(edit);
+  var feed = document.getElementById('feedList');
+  var empty = feed.querySelector('.ep-loading');
+  if (empty) empty.remove();
+
+  var card = document.createElement('div');
+  var cardId = 'fc-' + (edit.rcid || Date.now() + Math.random());
+  card.className = 'feed-card ' + analysis.level;
+  card.id = cardId;
+
+  var delta = (edit.newlen || 0) - (edit.oldlen || 0);
+  var deltaStr = (delta > 0 ? '+' : '') + delta;
+  var deltaClass = delta > 0 ? 'status-good' : delta < 0 ? 'status-bad' : '';
+  var comment = edit.comment || '';
+  var ts = edit.timestamp ? edit.timestamp.slice(11, 16) + ' UTC' : '';
+
+  card.innerHTML =
+    '<div class="feed-card-top">' +
+      '<div class="feed-article">' + escH((edit.title || '').slice(0, 50)) + '</div>' +
+      '<div class="feed-time">' + ts + '</div>' +
+    '</div>' +
+    '<div class="feed-meta">@' + escH(edit.user || '?') + ' &nbsp;·&nbsp; <span class="' + deltaClass + '">' + deltaStr + ' bytes</span></div>' +
+    '<div class="feed-comment">' + (comment ? escH(comment.slice(0, 80)) : '<em style="opacity:0.5">no edit summary</em>') + '</div>' +
+    '<div class="feed-susp"><div class="feed-susp-fill" style="width:' + analysis.suspicion + '%;background:' + (analysis.suspicion > 50 ? 'var(--red)' : analysis.suspicion > 25 ? 'var(--amber)' : 'var(--border2)') + '"></div></div>' +
+    '<div class="feed-btns">' +
+      '<button class="feed-btn vandal" onclick="judgeCard(\'' + cardId + '\',true,' + (analysis.isVandal ? 1 : 0) + ')">⚠ Vandal</button>' +
+      '<button class="feed-btn clean"  onclick="judgeCard(\'' + cardId + '\',false,' + (analysis.isVandal ? 1 : 0) + ')">✓ Clean</button>' +
+    '</div>';
+
+  feed.insertBefore(card, feed.firstChild);
+}
+
+function assessEdit(edit) {
+  var s = 0;
+  var delta = (edit.newlen || 0) - (edit.oldlen || 0);
+  if (!edit.comment || !edit.comment.trim()) s += 35;
+  if (edit.anon !== undefined) s += 20;
+  if (delta < -500) s += 30;
+  else if (delta < -100) s += 15;
+  if (edit.comment && edit.comment.length < 5 && edit.comment.length > 0) s += 15;
+  if (edit.user && /^\d{1,3}\.\d{1,3}/.test(edit.user)) s += 10;
+  s = Math.min(100, s);
+  return { suspicion: s, isVandal: s >= 40, level: s >= 50 ? 'high' : s >= 25 ? 'med' : 'low' };
+}
+
+function judgeCard(cardId, calledVandal, isVandal) {
+  var card = document.getElementById(cardId);
+  if (!card || card.classList.contains('judged')) return;
+  card.classList.add('judged');
+  var correct = (calledVandal === (isVandal === 1));
+  if (correct) {
+    vandalState.correct++;
+    vandalState.streak++;
+    vandalState.score += (10 + vandalState.streak * 3);
+    showFlash('+' + (10 + vandalState.streak * 3), 'status-good');
+  } else {
+    vandalState.streak = 0;
+    vandalState.lives--;
+    showFlash(calledVandal ? 'False alarm' : 'Missed!', 'status-bad');
+    if (vandalState.lives <= 0) {
+      stopVandal();
+      setTimeout(function() {
+        if (confirm('Game over! Score: ' + vandalState.score + '\n\nPlay again?')) { initVandal(); }
+        else { showLanding(); }
+      }, 400);
+      return;
+    }
+  }
+  updateVandalHUD();
+}
+
+function trimFeed() {
+  var feed = document.getElementById('feedList');
+  var cards = feed.querySelectorAll('.feed-card');
+  while (cards.length > 12) { feed.removeChild(cards[cards.length - 1]); cards = feed.querySelectorAll('.feed-card'); }
+}
+
+// ── TOOL 3: EDITOR REPUTATION AUDITOR ───────────────────────
+// READS: list=usercontribs, ucprop=ids|title|comment|flags|size|sizediff
+function runRepAudit() {
+  var user = document.getElementById('t3-input').value.trim();
+  if (!user) return;
+  saveRecent('t3', user);
+  renderRecent('t3', 't3-input', runRepAudit);
+
+  var out = document.getElementById('t3-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div></div>';
+
+  wikiAPI({
+    action: 'query',
+    list: 'usercontribs',
+    ucuser: user,
+    ucprop: 'ids|title|comment|flags|size|sizediff|timestamp',
+    uclimit: '500',
+    ucnamespace: '0'
+  }).then(function(data) {
+    var contribs = (data.query && data.query.usercontribs) || [];
+    if (!contribs.length) {
+      out.innerHTML = '<div class="ep-empty">No contributions found for this user.</div>';
+      return;
+    }
+
+    var total = contribs.length;
+    var noSummary = contribs.filter(function(c) { return !c.comment || !c.comment.trim(); }).length;
+    var massDel = contribs.filter(function(c) { return (c.sizediff || 0) < -500; }).length;
+    var massAdd = contribs.filter(function(c) { return (c.sizediff || 0) > 5000; }).length;
+    var shortSumm = contribs.filter(function(c) { return c.comment && c.comment.length < 5; }).length;
+    var revertCount = contribs.filter(function(c) { return c.comment && c.comment.toLowerCase().includes('revert'); }).length;
+    var newestDate = contribs[0] ? new Date(contribs[0].timestamp).toLocaleDateString() : '?';
+    var oldestDate = contribs[contribs.length - 1] ? new Date(contribs[contribs.length - 1].timestamp).toLocaleDateString() : '?';
+
+    // Suspicion scoring
+    var susp = 0;
+    var noSummaryPct = total > 0 ? noSummary / total : 0;
+    if (noSummaryPct > 0.5) susp += 35;
+    else if (noSummaryPct > 0.2) susp += 15;
+    if (massDel > 5) susp += 25;
+    if (massDel > 2) susp += 10;
+    if (shortSumm > 10) susp += 15;
+    susp = Math.min(100, susp);
+
+    // Editor state (0=new, 1=growing, 2=experienced)
+    var state = total < 50 ? 0 : total < 500 ? 1 : 2;
+
+    var encourageContent = '';
+    if (state === 0) {
+      encourageContent =
+        '<div class="encourage-card">' +
+          '<div class="encourage-title">You\'re just getting started — and that\'s great.</div>' +
+          '<div class="encourage-body">' + total + ' edit' + (total !== 1 ? 's' : '') + ' and counting. Wikipedia has 6.7 million articles in English alone. Millions need exactly the kind of attention you\'re already giving.' +
+          '<br><br>The editors who built the most valuable parts of this encyclopedia started exactly where you are now.</div>' +
+          '<div class="encourage-cta" onclick="openTool(\'edit\')">→ Find an article that needs your help right now</div>' +
+        '</div>';
+    } else if (state === 1) {
+      encourageContent =
+        '<div class="result-card" style="border-color:var(--accent)">' +
+          '<div class="result-card-title">Growing editor</div>' +
+          '<div class="result-value" style="font-size:16px;color:var(--accent)">' + total + ' contributions</div>' +
+          '<div class="result-label">You are building something real. ' + revertCount + ' edits involved reverts — that\'s normal for an active patroller. Keep going.</div>' +
+        '</div>';
+    }
+
+    var patternsHtml =
+      '<div class="result-card"><div class="result-card-title">Edit patterns</div>' +
+        '<div class="verdict-row"><div class="verdict-dot ' + (noSummaryPct < 0.2 ? 'dot-good' : 'dot-warn') + '"></div><div class="verdict-text">Without edit summary</div><div class="verdict-val ' + (noSummaryPct < 0.2 ? 'status-good' : 'status-warn') + '">' + noSummary + '</div></div>' +
+        '<div class="verdict-row"><div class="verdict-dot ' + (massDel < 3 ? 'dot-good' : 'dot-bad') + '"></div><div class="verdict-text">Mass deletions (>500 bytes)</div><div class="verdict-val ' + (massDel < 3 ? 'status-good' : 'status-bad') + '">' + massDel + '</div></div>' +
+        '<div class="verdict-row"><div class="verdict-dot dot-info"></div><div class="verdict-text">Reverts</div><div class="verdict-val status-info">' + revertCount + '</div></div>' +
+        '<div class="verdict-row"><div class="verdict-dot dot-info"></div><div class="verdict-text">Date range</div><div class="verdict-val" style="font-size:11px;color:var(--text2)">' + oldestDate + ' – ' + newestDate + '</div></div>' +
+      '</div>';
+
+    var cautionHtml =
+      '<div class="caution-card">This is a pattern analysis tool. It identifies behaviors associated with vandalism but cannot determine intent. New editors often exhibit these patterns while learning. Use this as a starting point for investigation, not a final judgment.</div>';
+
+    out.innerHTML = encourageContent + patternsHtml + cautionHtml;
+  }).catch(function() {
+    out.innerHTML = '<div class="ep-empty">Could not reach Wikipedia. Check connection.</div>';
+  });
+}
+
+// ── TOOL 4: TOPIC GAP FINDER ─────────────────────────────────
+// READS: list=categorymembers, prop=langlinks
+function runGapFinder() {
+  var cat = document.getElementById('t4-input').value.trim();
+  if (!cat) return;
+  saveRecent('t4', cat);
+
+  var out = document.getElementById('t4-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div></div>';
+
+  var catTitle = cat.toLowerCase().startsWith('category:') ? cat : 'Category:' + cat;
+
+  wikiAPI({
+    action: 'query',
+    list: 'categorymembers',
+    cmtitle: catTitle,
+    cmlimit: '30',
+    cmnamespace: '0'
+  }).then(function(data) {
+    var members = (data.query && data.query.categorymembers) || [];
+    if (!members.length) {
+      out.innerHTML = '<div class="ep-empty">Category not found or empty. Try a different name.</div>';
+      return;
+    }
+
+    var titles = members.map(function(m) { return m.title; });
+    return wikiAPI({
+      action: 'query',
+      titles: titles.slice(0, 20).join('|'),
+      prop: 'langlinks',
+      lllimit: '500'
+    }).then(function(d2) {
+      var pages = d2.query.pages;
+      var results = [];
+      for (var pid in pages) {
+        var p = pages[pid];
+        if (pid === '-1') continue;
+        var langCount = (p.langlinks || []).length;
+        results.push({ title: p.title, langs: langCount });
+      }
+      results.sort(function(a, b) { return a.langs - b.langs; });
+
+      if (!results.length) { out.innerHTML = '<div class="ep-empty">No results.</div>'; return; }
+
+      var maxLangs = Math.max.apply(null, results.map(function(r) { return r.langs; })) || 1;
+
+      out.innerHTML =
+        '<div class="result-card" style="margin-bottom:10px"><div class="result-card-title">Gap analysis</div>' +
+        '<div class="result-label">Articles with fewest language editions — prime for translation or expansion.</div></div>' +
+        results.map(function(r) {
+          var pct = Math.round(r.langs / maxLangs * 100);
+          var cls = r.langs < 5 ? 'status-bad' : r.langs < 20 ? 'status-warn' : 'status-good';
+          return '<div class="gap-item">' +
+            '<div class="gap-langs ' + cls + '">' + r.langs + '</div>' +
+            '<div class="gap-title">' + escH(r.title) + '</div>' +
+            '<div class="gap-bar"><div class="gap-bar-fill" style="width:' + pct + '%"></div></div>' +
+          '</div>';
+        }).join('');
+    });
+  }).catch(function() {
+    out.innerHTML = '<div class="ep-empty">Could not reach Wikipedia. Check connection.</div>';
+  });
+}
+
+// ── TOOL 5: PAGE VIEW PULSE ──────────────────────────────────
+// READS: Wikimedia Pageviews REST API
+function runPulse() {
+  var title = document.getElementById('t5-input').value.trim();
+  if (!title) return;
+  saveRecent('t5', title);
+
+  var out = document.getElementById('t5-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div></div>';
+
+  var now = new Date();
+  var end = fmtDate(now);
+  var start30 = new Date(now); start30.setDate(start30.getDate() - 30);
+  var s30 = fmtDate(start30);
+
+  var encoded = encodeURIComponent(title.replace(/ /g, '_'));
+  var lang = currentLang;
+  var url = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/' +
+    lang + '.wikipedia/all-access/all-agents/' + encoded + '/daily/' + s30 + '/' + end;
+
+  fetch(url).then(function(r) { return r.json(); })
+    .then(function(data) {
+      var items = data.items || [];
+      if (!items.length) { out.innerHTML = '<div class="ep-empty">No pageview data found.</div>'; return; }
+
+      var views = items.map(function(i) { return i.views; });
+      var total = views.reduce(function(a, b) { return a + b; }, 0);
+      var avg = Math.round(total / views.length);
+      var peak = Math.max.apply(null, views);
+      var maxV = peak || 1;
+
+      var trend = views.length > 7
+        ? (views.slice(-7).reduce(function(a, b) { return a + b; }, 0) / 7 > views.slice(0, 7).reduce(function(a, b) { return a + b; }, 0) / 7 ? '↑ Rising' : '↓ Falling')
+        : '→ Stable';
+      var trendCls = trend.includes('↑') ? 'status-good' : trend.includes('↓') ? 'status-warn' : 'status-info';
+
+      out.innerHTML =
+        '<div class="result-area">' +
+          '<div class="result-card">' +
+            '<div class="result-card-title">30-day total</div>' +
+            '<div class="result-value">' + total.toLocaleString() + '</div>' +
+            '<div class="result-label">views · ' + avg.toLocaleString() + ' avg/day · Peak: ' + peak.toLocaleString() + '</div>' +
+          '</div>' +
+          '<div class="result-card">' +
+            '<div class="result-card-title">Trend</div>' +
+            '<div class="result-value ' + trendCls + '" style="font-size:20px">' + trend + '</div>' +
+            '<div class="pulse-chart">' +
+              views.map(function(v) {
+                var h = Math.max(2, Math.round(v / maxV * 58));
+                return '<div class="pulse-bar-item" style="height:' + h + 'px" title="' + v.toLocaleString() + ' views"></div>';
+              }).join('') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }).catch(function() {
+      out.innerHTML = '<div class="ep-empty">Could not load pageview data. The article title may be slightly different.</div>';
+    });
+}
+
+function fmtDate(d) {
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return '' + y + m + day;
+}
+
+// ── TOOL 6: RED LINK HARVESTER ───────────────────────────────
+// READS: prop=revisions (wikitext), then prop=info (batch validate)
+// REGEX: captures [[Target]] and [[Target|Display]], skips File:/Category:/#
+var RED_LINK_REGEX = /\[\[([^\[\]|#:][^\[\]|#]*?)(?:\|[^\[\]]*)?\]\]/g;
+
+function runRedLink() {
+  var title = document.getElementById('t6-input').value.trim();
+  if (!title) return;
+  saveRecent('t6', title);
+
+  var out = document.getElementById('t6-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div></div>';
+
+  // Step 1: fetch raw wikitext
+  // READS: prop=revisions&rvprop=content&rvslot=main
+  wikiAPI({
+    action: 'query',
+    titles: title,
+    prop: 'revisions',
+    rvprop: 'content',
+    rvslot: 'main',
+    rvlimit: '1'
+  }).then(function(data) {
+    var pages = data.query.pages;
+    var pid = Object.keys(pages)[0];
+    if (pid === '-1') { out.innerHTML = '<div class="ep-empty">Article not found.</div>'; return; }
+
+    var slots = pages[pid].revisions && pages[pid].revisions[0] && pages[pid].revisions[0].slots;
+    var wikitext = (slots && slots.main && slots.main['*']) || '';
+
+    if (!wikitext) { out.innerHTML = '<div class="ep-empty">Could not retrieve article content.</div>'; return; }
+
+    // Step 2: extract internal links from wikitext
+    var found = {};
+    var match;
+    RED_LINK_REGEX.lastIndex = 0;
+    while ((match = RED_LINK_REGEX.exec(wikitext)) !== null) {
+      var t = match[1].trim();
+      // Skip namespace prefixes
+      if (t.indexOf(':') !== -1) continue;
+      if (t.length < 2 || t.length > 120) continue;
+      found[t] = true;
+    }
+
+    var candidates = Object.keys(found).slice(0, 100);
+    if (!candidates.length) { out.innerHTML = '<div class="ep-empty">No internal links found in this article.</div>'; return; }
+
+    // Step 3: batch validate — check which titles are missing
+    // READS: prop=info in batches of 50
+    var batches = [];
+    for (var i = 0; i < candidates.length; i += 50) {
+      batches.push(candidates.slice(i, i + 50));
+    }
+
+    var redLinks = [];
+
+    function processBatch(idx) {
+      if (idx >= batches.length) {
+        renderRedLinks(out, redLinks, title);
+        return;
+      }
+      wikiAPI({
+        action: 'query',
+        titles: batches[idx].join('|'),
+        prop: 'info'
+      }).then(function(d) {
+        var ps = d.query.pages;
+        for (var id in ps) {
+          if (id < 0 || ps[id].missing !== undefined) {
+            redLinks.push(ps[id].title || batches[idx][0]);
+          }
+        }
+        processBatch(idx + 1);
+      }).catch(function() { processBatch(idx + 1); });
+    }
+
+    processBatch(0);
+
+  }).catch(function() {
+    out.innerHTML = '<div class="ep-empty">Could not reach Wikipedia. Check connection.</div>';
+  });
+}
+
+function renderRedLinks(out, redLinks, sourceTitle) {
+  if (!redLinks.length) {
+    out.innerHTML =
+      '<div class="result-card">' +
+        '<div class="result-card-title">Red link harvest</div>' +
+        '<div class="result-value status-good" style="font-size:16px">No red links found</div>' +
+        '<div class="result-label">Every internal link in "' + escH(sourceTitle) + '" points to an existing article. This page is well-connected.</div>' +
+      '</div>';
+    return;
+  }
+
+  out.innerHTML =
+    '<div class="result-card" style="margin-bottom:10px">' +
+      '<div class="result-card-title">Red link harvest</div>' +
+      '<div class="result-value status-bad">' + redLinks.length + ' missing article' + (redLinks.length !== 1 ? 's' : '') + '</div>' +
+      '<div class="result-label">These topics are linked from "' + escH(sourceTitle) + '" but have no Wikipedia article yet. Each one is an opportunity to contribute.</div>' +
+    '</div>' +
+    '<div class="red-link-list">' +
+    redLinks.map(function(t) {
+      return '<div class="red-link-item">' +
+        '<div class="red-link-dot"></div>' +
+        '<div class="red-link-title">' + escH(t) + '</div>' +
+        '<div class="red-link-badge">Missing</div>' +
+      '</div>';
+    }).join('') +
+    '</div>';
+}
+
+// ── TOOL 7: WHAT COULD USE AN EDIT ──────────────────────────
+// READS: list=search with maintenance categories
+function runNeedsEdit() {
+  var topic = document.getElementById('t7-input').value.trim() || 'science';
+  saveRecent('t7', topic);
+
+  var out = document.getElementById('t7-result');
+  out.innerHTML = '<div class="ep-loading"><div class="ep-spinner"></div></div>';
+
+  // Search for articles in maintenance categories matching the topic
+  wikiAPI({
+    action: 'query',
+    list: 'search',
+    srsearch: topic + ' hastemplate:"stub" OR hastemplate:"citation needed" OR hastemplate:"cleanup"',
+    srnamespace: '0',
+    srlimit: '15',
+    srinfo: '',
+    srprop: 'snippet|titlesnippet'
+  }).then(function(data) {
+    var results = (data.query && data.query.search) || [];
+    if (!results.length) { out.innerHTML = '<div class="ep-empty">No maintenance articles found for this topic.</div>'; return; }
+
+    // Fetch categories for these articles to determine tag types
+    var titles = results.map(function(r) { return r.title; }).join('|');
+
+    wikiAPI({
+      action: 'query',
+      titles: titles,
+      prop: 'categories',
+      clshow: '!hidden',
+      cllimit: '20'
+    }).then(function(d2) {
+      var catMap = {};
+      var ps = d2.query.pages;
+      for (var pid in ps) {
+        var p = ps[pid];
+        var cats = (p.categories || []).map(function(c) { return c.title.toLowerCase(); });
+        var tags = [];
+        if (cats.some(function(c) { return c.includes('stub'); })) tags.push('stub');
+        if (cats.some(function(c) { return c.includes('citation') || c.includes('references'); })) tags.push('cite');
+        if (cats.some(function(c) { return c.includes('cleanup') || c.includes('improve'); })) tags.push('cleanup');
+        if (cats.some(function(c) { return c.includes('expand'); })) tags.push('expand');
+        catMap[p.title] = tags;
+      }
+
+      out.innerHTML =
+        '<div class="result-card" style="margin-bottom:10px">' +
+          '<div class="result-card-title">Needs editing</div>' +
+          '<div class="result-label">' + results.length + ' articles about "' + escH(topic) + '" with maintenance flags. Tap any to open in Wikipedia.</div>' +
+        '</div>' +
+        results.map(function(r) {
+          var tags = catMap[r.title] || ['cleanup'];
+          var tagsHtml = tags.map(function(tag) {
+            return '<span class="maint-tag tag-' + tag + '">' + tag + '</span>';
+          }).join('');
+          var wikiUrl = 'https://' + currentLang + '.wikipedia.org/wiki/' + encodeURIComponent(r.title.replace(/ /g,'_'));
+          return '<div class="maintenance-item" onclick="window.open(\'' + wikiUrl + '\',\'_blank\')">' +
+            '<div class="maint-title">' + escH(r.title) + '</div>' +
+            '<div class="maint-tags">' + tagsHtml + '</div>' +
+          '</div>';
+        }).join('');
+    });
+  }).catch(function() {
+    out.innerHTML = '<div class="ep-empty">Could not reach Wikipedia. Check connection.</div>';
+  });
+}
+
+// ── FLASH SCORE ──────────────────────────────────────────────
+function showFlash(msg, cls) {
+  var el = document.createElement('div');
+  el.className = 'flash-score ' + (cls || '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function() { el.remove(); }, 1000);
+}
+
+// ── UTILITIES ────────────────────────────────────────────────
+function escH(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── DESKTOP LINK ─────────────────────────────────────────────
+document.getElementById('desktopLink').onclick = function() {
+  document.getElementById('app').style.maxWidth = '900px';
+  document.getElementById('app').style.padding = '0 40px';
+};
+
+// ── BOOT ─────────────────────────────────────────────────────
+// BOOT ORDER:
+// 1. detectLanguage → sets WIKI_LANG + WIKI_API_BASE + S
+// 2. renderLanding → builds tool list in detected language
+// 3. renderLangButtons → renders language switcher
+// 4. renderRecent for each tool (called when tool opens)
+window.addEventListener('DOMContentLoaded', function() {
+  detectLanguage();
+});
+</script>
+</body>
+</html>
