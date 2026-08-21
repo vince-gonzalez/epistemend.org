@@ -336,11 +336,20 @@ function get(url, accept, attempt) {
 var OA_GAP = 110;
 var oaNext = 0;
 
+/*
+  OpenAlex answers faster and more generously when a request says who is
+  asking. The address is the service's own, so every visitor's request
+  identifies the tool and none of them carries a person's address.
+*/
+var CONTACT = 'api@epistemend.org';
+
 function oa(url) {
   var now = Date.now();
   var wait = Math.max(0, oaNext - now);
   oaNext = Math.max(now, oaNext) + OA_GAP;
-  return sleep(wait).then(function () { return get(url); });
+  var polite = url + (url.indexOf('?') === -1 ? '?' : '&') +
+               'mailto=' + encodeURIComponent(CONTACT);
+  return sleep(wait).then(function () { return get(polite); });
 }
 
 /* A counter that keeps "we could not look" apart from "there was nothing
