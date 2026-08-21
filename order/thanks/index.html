@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order received — Epistemend</title>
+<meta name="robots" content="noindex">
+<style>
+/* ============================================================
+   ORDER STATUS v1.0.0
+   What happened to the thing you paid for.
+   F-Keys Creative LLC | www.f-keys.com
+   ============================================================ */
+:root{
+  --bg:#0b0d13;--panel:#12151f;--line:#222738;--line2:#2c3348;
+  --ink:#f2f4f9;--dim:#96a0ba;--faint:#6d7793;--accent:#5b9cff;--ok:#3ddba8;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  line-height:1.6;font-size:16px}
+.wrap{max-width:720px;margin:0 auto;padding:90px 24px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:20px}
+.eyebrow a{color:var(--faint)}
+h1{font-size:clamp(26px,4vw,36px);letter-spacing:-.01em;max-width:20ch}
+p{margin-top:16px;color:var(--dim);max-width:60ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:24px;margin-top:32px}
+.line{display:flex;gap:16px;padding:9px 0;font-size:15px;
+  border-top:1px solid var(--line)}
+.line:first-child{border-top:0}
+.line .k{color:var(--faint);min-width:110px}
+.line .v{font-family:var(--mono);color:var(--ink)}
+.v.ok{color:var(--ok)}
+.ready{margin-top:26px;font-size:17px}
+footer{border-top:1px solid var(--line);margin-top:56px;padding-top:28px;
+  color:var(--faint);font-size:14.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow"><a href="/">Epistemend</a> &nbsp;·&nbsp; Order received</div>
+  <h1>Paid, and the check is under way.</h1>
+  <p>A confirmation is on its way to the address you gave, and the report
+  follows it. You can close this page; nothing here needs watching.</p>
+
+  <div class="card" id="card">
+    <div class="line"><span class="k">Order</span><span class="v" id="order">—</span></div>
+    <div class="line"><span class="k">Product</span><span class="v" id="product">—</span></div>
+    <div class="line"><span class="k">State</span><span class="v" id="state">checking…</span></div>
+  </div>
+
+  <div class="ready" id="ready"></div>
+
+  <footer>
+    Anything unexpected, write to
+    <a href="mailto:hello@epistemend.org">hello@epistemend.org</a> and quote
+    the order above.
+  </footer>
+</div>
+
+<script>
+var STATE = { order: null, tries: 0 };
+var API = 'https://orders.epistemend.org';
+
+function el(id) { return document.getElementById(id); }
+
+var WORDS = {
+  queued: 'queued',
+  running: 'running now',
+  complete: 'ready',
+  needs_attention: 'held for a person to look at'
+};
+
+function poll() {
+  if (!STATE.order) { return; }
+  fetch(API + '/api/status?order=' + encodeURIComponent(STATE.order))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.error) { throw new Error(d.error); }
+      el('product').textContent = d.product || '—';
+      el('state').textContent = WORDS[d.state] || d.state;
+      el('state').className = 'v' + (d.state === 'complete' ? ' ok' : '');
+      if (d.report) {
+        el('ready').innerHTML = 'Your report is ready: <a href="' +
+          d.report + '">open it</a>.';
+        return;
+      }
+      /* Backing off rather than hammering: the answer changes in minutes,
+         not in seconds. */
+      STATE.tries++;
+      if (STATE.tries < 40) {
+        setTimeout(poll, Math.min(30000, 3000 + STATE.tries * 2000));
+      }
+    })
+    .catch(function (err) {
+      console.error('status:', err);
+      el('state').textContent = 'not reachable just now';
+    });
+}
+
+(function () {
+  STATE.order = new URLSearchParams(location.search).get('order');
+  el('order').textContent = STATE.order || 'not named';
+  if (STATE.order) { poll(); }
+})();
+</script>
+</body>
+</html>

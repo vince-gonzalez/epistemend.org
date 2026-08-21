@@ -1,0 +1,20 @@
+name = "epistemend-orders"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# The order state. D1 sits on the same platform as the Worker, so there is
+# one deploy, one set of credentials, and nothing to keep in sync.
+[[d1_databases]]
+binding = "DB"
+database_name = "epistemend"
+database_id = "PUT_THE_DATABASE_ID_HERE"
+
+# Set with `wrangler secret put <NAME>`, never in this file:
+#
+#   STRIPE_SECRET_KEY        sk_live_... from the Stripe dashboard
+#   STRIPE_WEBHOOK_SECRET    whsec_...   shown when the endpoint is added
+#   GITHUB_TOKEN             a fine-grained token with Contents: read/write
+#   RUNNER_KEY               any long random string; the runner sends it back
+#
+[vars]
+GITHUB_REPO = "vince-gonzalez/epistemend.org"

@@ -1,0 +1,42 @@
+# ============================================================
+# epistemend — the runner
+# F-Keys | www.f-keys.com
+# ------------------------------------------------------------
+# Woken by the worker the moment a payment clears, and on a
+# schedule as well, so a dispatch that never arrives delays a
+# report rather than losing one.
+# ============================================================
+name: Run a paid check
+
+on:
+  repository_dispatch:
+    types: [epistemend-job]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: epistemend-runner
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the engine
+        run: pip install --quiet "authorecon @ git+https://github.com/vince-gonzalez/apriori@main"
+
+      - name: Work the queue
+        env:
+          ORDERS_API: ${{ secrets.ORDERS_API }}
+          RUNNER_KEY: ${{ secrets.RUNNER_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DISPATCHED_JOB: ${{ github.event.client_payload.job }}
+        run: python .github/scripts/runner.py
