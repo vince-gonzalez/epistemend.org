@@ -111,6 +111,7 @@ button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim)}
 .s-review{background:rgba(255,200,87,.13);color:var(--warn)}
 .s-divergent{background:rgba(255,107,107,.13);color:var(--bad)}
 .s-unlocatable{background:rgba(255,107,107,.13);color:var(--bad)}
+.s-script{background:rgba(255,200,87,.13);color:var(--warn)}
 .s-retracted{background:rgba(255,107,107,.2);color:var(--bad)}
 .s-unchecked{background:rgba(150,160,186,.12);color:var(--dim)}
 .found{margin-top:10px;font-size:14.5px;color:var(--ink);
@@ -377,7 +378,41 @@ function normalise(text) {
     .replace(/[–—]/g, '-')
     .toLowerCase();
 }
-function skeleton(text) { return normalise(text).replace(/[^a-z0-9]/g, ''); }
+/*
+  The comparable letters and digits of a string, in any writing system.
+
+  Written as [^a-z0-9] this deleted every character outside the Latin
+  alphabet. A Japanese reference reduced to "1219116880" - the digits of its
+  year and page range and nothing else - then matched nothing, and was
+  reported as a work that could not be found.
+*/
+function skeleton(text) {
+  return normalise(text).replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+var SCRIPTS = [
+  [/[Ѐ-ӿ]/, 'Cyrillic'],
+  [/[Ͱ-Ͽ]/, 'Greek'],
+  [/[؀-ۿ]/, 'Arabic'],
+  [/[֐-׿]/, 'Hebrew'],
+  [/[぀-ヿ]/, 'Japanese'],
+  [/[一-鿿]/, 'Chinese, Japanese or Korean characters'],
+  [/[가-힯]/, 'Korean'],
+  [/[ऀ-ॿ]/, 'Devanagari'],
+  [/[฀-๿]/, 'Thai']
+];
+
+/* Which writing system carries this reference, if it is not the Latin one. */
+function scriptName(text) {
+  var found = null;
+  SCRIPTS.forEach(function (pair) {
+    if (!found && (String(text || '').match(new RegExp(pair[0].source, 'g'))
+                   || []).length > 6) {
+      found = pair[1];
+    }
+  });
+  return found;
+}
 
 /*
   How much of a record's title appears in the reference that named it.
@@ -675,6 +710,17 @@ function checkOne(ref) {
           result.state = 'review';
           result.says = 'The closest record found agrees with part of this '
                       + 'reference. Worth a look before it is relied on.';
+        } else if (scriptName(ref)) {
+          /* Nothing found, and the reference is not in the script these
+             indexes are built around. Absence is a statement about the
+             indexes rather than about the work, and calling it a missing
+             citation would put every author writing in Russian, Japanese or
+             Arabic under suspicion for it. */
+          result.state = 'script';
+          result.says = 'This reference is written in ' + scriptName(ref)
+                      + ', and the indexes searched hold such works '
+                      + 'inconsistently. Nothing was found, and that is not '
+                      + 'evidence the work does not exist.';
         } else {
           result.state = 'unlocatable';
           result.says = 'No record matching this reference was found in any '
@@ -715,6 +761,7 @@ var LABEL = {
   review: 'Needs a look',
   divergent: 'Points elsewhere',
   unlocatable: 'Not found',
+  script: 'Not in these indexes',
   retracted: 'Retracted',
   unchecked: 'Not checked'
 };
@@ -744,9 +791,9 @@ function renderRow(n, r) {
   return h.join('');
 }
 
-var ORDER = ['confirmed', 'located', 'review', 'divergent', 'unlocatable',
-             'retracted', 'unchecked'];
-var TONE = { confirmed: 'ok', located: '', review: 'warn',
+var ORDER = ['confirmed', 'located', 'review', 'script', 'divergent',
+             'unlocatable', 'retracted', 'unchecked'];
+var TONE = { confirmed: 'ok', located: '', review: 'warn', script: 'warn',
              divergent: 'bad', unlocatable: 'bad', retracted: 'bad',
              unchecked: 'warn' };
 
