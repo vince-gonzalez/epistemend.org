@@ -192,6 +192,7 @@ authorecon-discover 0000-0002-1825-0097 --out works.json</pre>
 var STATE = {
   running: false,
   doc: null,
+  alex: null,
   blobUrl: null
 };
 
@@ -333,6 +334,59 @@ function fromOpenAlex(orcid, onPage) {
   });
 }
 
+
+/* ── Zenodo mints two DOIs per work ────────────────────────────
+   A version DOI and a concept DOI. An author claims one on ORCID,
+   OpenAlex indexes the other, and comparing raw DOIs reports the
+   same work as missing.
+
+   Measured on the record this was built for: 41 reported unclaimed,
+   32 already on the record under their other DOI, and all of the
+   remainder reachable from a DOI already claimed. The true answer
+   was zero. Both sides are resolved to a concept before comparing.
+   ──────────────────────────────────────────────────────────── */
+var CONCEPTS = {};
+
+function conceptDoi(doi) {
+  if (!doi) { return Promise.resolve(doi); }
+  var low = String(doi).toLowerCase();
+  if (CONCEPTS[low]) { return Promise.resolve(CONCEPTS[low]); }
+  if (low.indexOf('zenodo.') === -1) {
+    CONCEPTS[low] = low;
+    return Promise.resolve(low);
+  }
+  var rid = low.split('zenodo.').pop();
+  if (!/^\d+$/.test(rid)) {
+    CONCEPTS[low] = low;
+    return Promise.resolve(low);
+  }
+  return getJson('https://zenodo.org/api/records/' + rid).then(function (rec) {
+    // A DOI that will not resolve is returned unchanged rather than dropped
+    // or merged. A work nobody can resolve should be reported as itself.
+    CONCEPTS[low] = String(rec.conceptdoi || low).toLowerCase();
+    return CONCEPTS[low];
+  }).catch(function (err) {
+    console.error('conceptDoi:', err);
+    CONCEPTS[low] = low;
+    return low;
+  });
+}
+
+function resolveAll(dois, onProgress) {
+  var list = dois.slice(), done = 0, out = {};
+  function next() {
+    if (!list.length) { return Promise.resolve(out); }
+    var doi = list.shift();
+    return conceptDoi(doi).then(function (c) {
+      out[doi] = c;
+      done++;
+      if (onProgress && done % 5 === 0) { onProgress(done, done + list.length); }
+      return next();
+    });
+  }
+  return next();
+}
+
 /* ── the report ────────────────────────────────────────────── */
 
 function esc(s) {
@@ -375,6 +429,18 @@ function render(doc) {
       (noDoiClaimed.length === 1 ? ' has' : 's have') + ' no DOI on the ORCID ' +
       'record, so nothing can be matched against the literature for ' +
       (noDoiClaimed.length === 1 ? 'it' : 'them') + '.</p>');
+  }
+
+  if (doc.merged_versions) {
+    h.push('<div class="recon">' + esc(doc.merged_versions) +
+      ' indexed work' + (doc.merged_versions === 1 ? '' : 's') +
+      ' already on the record under another Zenodo DOI, or another version ' +
+      'of one already counted</div>');
+  }
+
+  if (!unclaimed.length) {
+    h.push('<p class="ok" style="margin-top:20px">Nothing is missing. Every ' +
+      'work OpenAlex attributes to this ORCID is already on the record.</p>');
   }
 
   if (unclaimed.length) {
@@ -489,10 +555,25 @@ function run(raw) {
       say('OpenAlex: read ' + read + ' of ' + total + '…');
     });
   }).then(function (alex) {
-    var works = [], seen = {};
+    STATE.alex = alex;
+    var everyDoi = orcidWorks.map(function (w) { return w.doi; })
+      .filter(Boolean).concat(Object.keys(alex.byDoi));
+    say('Resolving Zenodo versions to their concept…');
+    return resolveAll(everyDoi, function (done, total) {
+      say('Resolving Zenodo versions to their concept… ' + done + ' of ' + total);
+    });
+  }).then(function (concepts) {
+    var alex = STATE.alex;
+    var works = [], seen = {}, claimed = {}, merged = 0;
+
     orcidWorks.forEach(function (w) {
-      if (w.doi && seen[w.doi]) { return; }
-      if (w.doi) { seen[w.doi] = true; }
+      if (w.doi) { claimed[concepts[w.doi] || w.doi] = true; }
+    });
+
+    orcidWorks.forEach(function (w) {
+      var c = w.doi ? (concepts[w.doi] || w.doi) : null;
+      if (c && seen[c]) { return; }
+      if (c) { seen[c] = true; }
       var extra = (w.doi && alex.byDoi[w.doi]) || null;
       works.push({
         title: w.title, doi: w.doi, date: w.date,
@@ -504,10 +585,12 @@ function run(raw) {
       });
     });
     Object.keys(alex.byDoi).forEach(function (doi) {
-      if (seen[doi]) { return; }
+      var c = concepts[doi] || doi;
+      if (claimed[c] || seen[c]) { merged++; return; }
+      seen[c] = true;
       var extra = alex.byDoi[doi];
       works.push({
-        title: null, doi: doi, date: null, type: extra.type,
+        title: null, doi: doi, concept_doi: c, date: null, type: extra.type,
         openalex: extra.openalex, cited_by: extra.cited_by,
         open_access: extra.open_access, in_openalex: true, unclaimed: true
       });
@@ -520,6 +603,7 @@ function run(raw) {
       openalex_with_doi: Object.keys(alex.byDoi).length,
       openalex_without_doi: alex.noDoi,
       paged_to_end: alex.pagedToEnd,
+      merged_versions: merged,
       works: works
     };
     say('');
