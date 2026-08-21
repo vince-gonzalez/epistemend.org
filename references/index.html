@@ -268,6 +268,26 @@ function polite(url) {
 
 /* ── splitting a pasted bibliography ────────────────────── */
 
+/* What the opening of a new reference looks like. Kept in step with the
+   command line tool, which is tested against the same ten styles. */
+var STARTERS = [
+  /^[\[(]?\d{1,3}[\].)]\s/,                   /* 1.   [1]   (1)             */
+  /^[—–-]{2,}/,                               /* ---  a repeated author     */
+  /^[A-Z][A-Za-z'’-]+,\s*[A-Z]/,              /* Shannon, C. E.             */
+  /^[A-Z][A-Za-z'’-]+\s+[A-Z]{1,4}[.,;]/,     /* Shannon CE.                */
+  /^[A-Z][^.]{2,70}\.?\s*\(\d{4}[a-z]?\)/     /* Centre for Disease... (2021) */
+];
+
+/* A reference that has ended closes its sentence. One that has not is still
+   mid-reference whatever the next line happens to look like. */
+var FINISHED = /[.!?"”»']\s*$/;
+
+function startsAReference(line) {
+  var text = (line || '').trim();
+  if (!text) { return false; }
+  return STARTERS.some(function (p) { return p.test(text); });
+}
+
 function splitRefs(text) {
   var raw = String(text || '').replace(/\r/g, '');
   if (!raw.trim()) { return []; }
@@ -291,7 +311,17 @@ function splitRefs(text) {
   var out = [];
   raw.split('\n').forEach(function (line) {
     if (!line.trim()) { return; }
-    if (/^\s{2,}|^\t/.test(line) && out.length) {
+    /*
+      Pasting from a word processor wraps a reference across several lines
+      with nothing marking the continuations. That is the commonest way a
+      list arrives and the way an indent rule fails: six lines become six
+      fragments, each matching nothing. A line opens a new reference only
+      if it looks like the start of one and the line above it finished its
+      sentence.
+    */
+    var indented = /^\s{2,}|^\t/.test(line);
+    var openAbove = out.length && !FINISHED.test(out[out.length - 1]);
+    if (out.length && (indented || openAbove || !startsAReference(line))) {
       out[out.length - 1] += ' ' + line.trim();
     } else {
       out.push(line.trim());
