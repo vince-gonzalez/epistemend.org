@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference Check — Epistemend</title>
+<meta name="description" content="Paste a bibliography. Every reference is resolved against Crossref, DataCite, OpenAlex, Europe PMC and OpenLibrary, and comes back confirmed, located, divergent or unlocatable.">
+<link rel="canonical" href="https://www.epistemend.org/references/">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="Reference Check — Epistemend">
+<meta property="og:description" content="Paste a bibliography. Find out which references are real.">
+<meta property="og:type" content="website">
+<style>
+/* ============================================================
+   REFERENCE CHECK v1.0.0
+   Paste a bibliography; resolve every entry against the
+   indexes that would know.
+   F-Keys Creative LLC | www.f-keys.com
+   ============================================================
+   WORKFLOW STACK:
+     1. split pasted text into individual references
+     2. take the identifier if the reference carries one
+     3. otherwise ask Crossref to find a candidate
+     4. VERIFY the candidate against the reference text,
+        because a search score ranks relevance and says
+        nothing about whether the work is the right one
+     5. check the resulting identifier for a retraction
+
+   ASSET MANIFEST:
+     none. No fonts, no libraries, no analytics, no images.
+
+   BOOT ORDER:
+     styles -> DOM -> wire() -> idle until asked
+   ============================================================ */
+:root{
+  --bg:#0b0d13; --panel:#12151f; --panel2:#0e1119; --line:#222738;
+  --line2:#2c3348;
+  --ink:#f2f4f9; --dim:#96a0ba; --faint:#6d7793;
+  --accent:#5b9cff; --ok:#3ddba8; --warn:#ffc857; --bad:#ff6b6b;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  line-height:1.6;-webkit-font-smoothing:antialiased;font-size:16px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3{line-height:1.25;font-weight:600;letter-spacing:-.01em}
+
+.masthead{border-bottom:1px solid var(--line);padding:52px 0 40px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:18px}
+.eyebrow a{color:var(--faint)}
+h1{font-size:clamp(28px,4.4vw,40px);max-width:20ch}
+.lede{margin-top:16px;font-size:17px;color:var(--dim);max-width:62ch}
+
+.console{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:26px;margin:34px 0 8px}
+label{display:block;font-size:12.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:10px;font-weight:500}
+textarea{width:100%;min-height:190px;resize:vertical;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+  color:var(--ink);padding:14px 16px;font-family:var(--mono);font-size:14px;
+  line-height:1.65}
+textarea::placeholder{color:var(--faint)}
+textarea:focus{outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(91,156,255,.18)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:16px}
+button{background:var(--accent);color:#06090f;border:0;border-radius:8px;
+  padding:13px 24px;font-size:15.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;white-space:nowrap}
+button:hover:not(:disabled){filter:brightness(1.08)}
+button:disabled{opacity:.5;cursor:default}
+button.ghost{background:transparent;color:var(--dim);
+  border:1px solid var(--line2);font-weight:500;padding:13px 18px}
+button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim)}
+.counter{margin-left:auto;font-family:var(--mono);font-size:13px;
+  color:var(--faint)}
+.hint{margin-top:14px;font-size:14px;color:var(--faint);max-width:70ch}
+.hint b{color:var(--dim);font-weight:500}
+.err{margin-top:14px;font-size:15px;color:var(--bad)}
+
+#out{display:none;margin-top:48px}
+#out.on{display:block}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden;margin-bottom:8px}
+.tile{background:var(--panel2);padding:15px 16px}
+.tile .n{font-family:var(--mono);font-size:25px;font-weight:600;line-height:1.1}
+.tile .k{font-size:12px;color:var(--dim);margin-top:5px;line-height:1.35}
+.tile.ok .n{color:var(--ok)}
+.tile.warn .n{color:var(--warn)}
+.tile.bad .n{color:var(--bad)}
+
+.progress{font-family:var(--mono);font-size:13px;color:var(--faint);
+  padding:14px 0 6px}
+
+.ref{border-top:1px solid var(--line);padding:20px 0;display:grid;
+  grid-template-columns:26px 1fr;gap:16px}
+.ref .idx{font-family:var(--mono);font-size:13px;color:var(--faint);
+  padding-top:3px;text-align:right}
+.ref .text{font-size:15px;color:var(--dim);line-height:1.55;
+  word-break:break-word}
+.state{display:inline-block;font-size:11.5px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
+  border-radius:3px;margin-bottom:9px;font-family:var(--sans)}
+.s-confirmed{background:rgba(61,219,168,.13);color:var(--ok)}
+.s-located{background:rgba(91,156,255,.14);color:var(--accent)}
+.s-review{background:rgba(255,200,87,.13);color:var(--warn)}
+.s-divergent{background:rgba(255,107,107,.13);color:var(--bad)}
+.s-unlocatable{background:rgba(255,107,107,.13);color:var(--bad)}
+.s-retracted{background:rgba(255,107,107,.2);color:var(--bad)}
+.s-unchecked{background:rgba(150,160,186,.12);color:var(--dim)}
+.found{margin-top:10px;font-size:14.5px;color:var(--ink);
+  border-left:2px solid var(--line2);padding-left:14px;max-width:74ch}
+.found .t{color:var(--ink)}
+.found .m{font-family:var(--mono);font-size:12.5px;color:var(--faint);
+  margin-top:4px}
+.says{margin-top:10px;font-size:14.5px;color:var(--dim);max-width:74ch}
+
+.sources{border-top:1px solid var(--line);margin-top:44px;padding:30px 0 0}
+.sources h3{font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:14px}
+.sources p{font-size:14.5px;color:var(--dim);max-width:74ch;margin-bottom:12px}
+pre{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;padding:16px;overflow-x:auto;font-size:13.5px;
+  color:var(--dim);margin:14px 0}
+footer{border-top:1px solid var(--line);margin-top:56px;padding:32px 0 70px;
+  color:var(--faint);font-size:14.5px}
+footer p{margin:5px 0}
+@media print{.console,.progress,footer{display:none}}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="wrap">
+    <div class="eyebrow"><a href="/">Epistemend</a> &nbsp;·&nbsp; Reference Check</div>
+    <h1>Which of these references are real?</h1>
+    <p class="lede">Paste a bibliography. Every entry is looked up in the
+    indexes that would hold it, and each one comes back with what was found
+    and how well it matches what was written.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="console">
+    <label for="refs">The reference list</label>
+    <textarea id="refs" spellcheck="false" placeholder="Shannon, C. E. (1948). A mathematical theory of communication. Bell System Technical Journal, 27(3), 379-423.
+
+Kucsko, G. et al. (2013). Nanometre-scale thermometry in a living cell. Nature, 500, 54-58. https://doi.org/10.1038/nature12373"></textarea>
+    <div class="row">
+      <button id="go">Check the references</button>
+      <button id="demo" class="ghost">Load an example</button>
+      <span class="counter" id="counter"></span>
+    </div>
+    <div class="hint" id="hint"><b>Everything runs in this page.</b> The
+    lookups go from your browser straight to Crossref, DataCite, OpenAlex,
+    Europe PMC and OpenLibrary. Nothing reaches us, and there is nothing
+    here to record it with.</div>
+    <div class="err" id="err" style="display:none"></div>
+  </div>
+
+  <div id="out">
+    <div class="tiles" id="tiles"></div>
+    <div class="progress" id="progress"></div>
+    <div id="rows"></div>
+  </div>
+
+  <div class="sources">
+    <h3>What was consulted, and what it means</h3>
+    <p><b>Crossref</b> holds journal articles, books, chapters and conference
+    papers. <b>DataCite</b> holds datasets, software and theses.
+    <b>Europe PMC</b> holds the biomedical literature. <b>OpenLibrary</b>
+    holds books and their editions. <b>OpenAlex</b> is asked about
+    retraction.</p>
+    <p>A reference carrying an identifier is resolved directly. A reference
+    without one is searched for, and the candidate that comes back is then
+    compared against the words of the reference itself, because a search
+    result is ranked by relevance and a relevant result can still be the
+    wrong work.</p>
+    <p>Two sources need a server rather than a browser and run in the
+    command line tool: PubMed, which declines requests from web pages, and
+    the resolution of every outbound link to see whether it still loads.</p>
+    <pre>pip install authorecon</pre>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><a href="/">Epistemend</a> is part of <a href="https://f-keys.com">F-Keys</a>.</p>
+    <p>www.f-keys.com &nbsp;|&nbsp; &copy; 2026 F-Keys Creative LLC</p>
+  </div>
+</footer>
+
+<script>
+/* All mutable state in one object, per the house rule. */
+var STATE = {
+  running: false,
+  refs: [],
+  results: []
+};
+
+var CONTACT = 'api@epistemend.org';
+var CROSSREF = 'https://api.crossref.org/works';
+var DATACITE = 'https://api.datacite.org/dois/';
+var OPENALEX = 'https://api.openalex.org/works/doi:';
+var EUROPEPMC = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
+var OPENLIB = 'https://openlibrary.org/isbn/';
+
+/* The browser check reads this many. The rest are named rather than
+   dropped quietly, because a list that was cut short and did not say so
+   reads as a list that came back clean. */
+var FREE_LIMIT = 25;
+
+function el(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function sleep(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+/* ── network ────────────────────────────────────────────── */
+
+function get(url, attempt) {
+  attempt = attempt || 0;
+  return fetch(url, { headers: { 'Accept': 'application/json' } })
+    .then(function (r) {
+      if (r.status === 429 || r.status === 503) {
+        if (attempt < 4) {
+          return sleep(500 * Math.pow(2, attempt)).then(function () {
+            return get(url, attempt + 1);
+          });
+        }
+        var busy = new Error('rate limited');
+        busy.busy = true;
+        throw busy;
+      }
+      if (r.status === 404) {
+        var gone = new Error('not found');
+        gone.missing = true;
+        throw gone;
+      }
+      if (!r.ok) { throw new Error(r.status); }
+      return r.json();
+    });
+}
+
+/* Crossref asks that requests identify themselves, and answers from a
+   faster pool when they do. */
+var GAP = 120;
+var nextAt = 0;
+function polite(url) {
+  var now = Date.now();
+  var wait = Math.max(0, nextAt - now);
+  nextAt = Math.max(now, nextAt) + GAP;
+  var sep = url.indexOf('?') === -1 ? '?' : '&';
+  return sleep(wait).then(function () {
+    return get(url + sep + 'mailto=' + encodeURIComponent(CONTACT));
+  });
+}
+
+/* ── splitting a pasted bibliography ────────────────────── */
+
+function splitRefs(text) {
+  var raw = String(text || '').replace(/\r/g, '');
+  if (!raw.trim()) { return []; }
+
+  /* A reference list arrives in one of three shapes and the shape has to
+     be detected rather than assumed: blocks separated by a blank line,
+     entries opened by a number, or one entry per line with continuation
+     lines indented under it. */
+  var blocks = raw.split(/\n\s*\n/).map(function (b) {
+    return b.replace(/\s+/g, ' ').trim();
+  }).filter(function (b) { return b.length > 24; });
+  if (blocks.length > 1) { return blocks; }
+
+  var numbered = raw.split(/\n(?=\s*[\[(]?\d{1,3}[\].)]\s)/);
+  if (numbered.length > 1) {
+    return numbered.map(function (b) {
+      return b.replace(/\s+/g, ' ').trim();
+    }).filter(function (b) { return b.length > 24; });
+  }
+
+  var out = [];
+  raw.split('\n').forEach(function (line) {
+    if (!line.trim()) { return; }
+    if (/^\s{2,}|^\t/.test(line) && out.length) {
+      out[out.length - 1] += ' ' + line.trim();
+    } else {
+      out.push(line.trim());
+    }
+  });
+  return out.map(function (b) { return b.replace(/\s+/g, ' ').trim(); })
+            .filter(function (b) { return b.length > 24; });
+}
+
+/* ── identifiers a reference may already carry ──────────── */
+
+function findDoi(ref) {
+  var m = /\b(10\.\d{4,9}\/[^\s"'<>,]+)/i.exec(ref);
+  if (!m) { return null; }
+  /* Trailing sentence punctuation belongs to the prose, not the DOI. */
+  return m[1].replace(/[.,;)\]]+$/, '').toLowerCase();
+}
+/*
+  The year a reference claims, preferred from parentheses because that is
+  where a citation puts the year of publication and page ranges are full of
+  other four-digit numbers.
+*/
+function findYear(ref) {
+  var paren = /\((\d{4})[a-z]?\)/.exec(ref);
+  if (paren) { return parseInt(paren[1], 10); }
+  var any = /(1[89]\d{2}|20\d{2})/.exec(ref);
+  return any ? parseInt(any[1], 10) : null;
+}
+
+/* A year apart is ordinary: online first in one year, in an issue the
+   next. Two or more apart is a different publication. */
+function yearAgrees(a, b) {
+  if (!a || !b) { return true; }
+  return Math.abs(a - b) <= 1;
+}
+
+function findIsbn(ref) {
+  var m = /\bISBN[:\s]*((?:97[89][- ]?)?[\d][\d- ]{8,}[\dXx])/.exec(ref);
+  return m ? m[1].replace(/[- ]/g, '') : null;
+}
+function findArxiv(ref) {
+  var m = /arXiv[:\s]*(\d{4}\.\d{4,5})/i.exec(ref);
+  return m ? m[1] : null;
+}
+
+/* ── comparing a record to the reference that named it ──── */
+
+function normalise(text) {
+  var box = document.createElement('textarea');
+  box.innerHTML = String(text == null ? '' : text).replace(/<[^>]+>/g, ' ');
+  return box.value.normalize('NFKD')
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .toLowerCase();
+}
+function skeleton(text) { return normalise(text).replace(/[^a-z0-9]/g, ''); }
+
+/*
+  How much of a record's title appears in the reference that named it.
+
+  The first version of this counted the title's words wherever they turned
+  up in the citation, and an invented reference defeated it immediately: a
+  fabricated journal name, "Journal of Computational Semiotics", supplied
+  two of the three words in a real paper called "Computational models in
+  semiotics", and the scattered words scored 0.67.
+
+  So the question is not how many of the title's words are present but
+  whether the title is present. A genuine citation carries the title as a
+  run of text. Words gathered from an author list, a journal name and a
+  page range are a coincidence, and a coincidence should not read as a
+  match.
+*/
+function longestRun(a, b) {
+  if (!a.length || !b.length) { return 0; }
+  var prev = new Int32Array(b.length + 1);
+  var cur = new Int32Array(b.length + 1);
+  var best = 0, i, j;
+  for (i = 1; i <= a.length; i++) {
+    for (j = 1; j <= b.length; j++) {
+      if (a.charCodeAt(i - 1) === b.charCodeAt(j - 1)) {
+        cur[j] = prev[j - 1] + 1;
+        if (cur[j] > best) { best = cur[j]; }
+      } else {
+        cur[j] = 0;
+      }
+    }
+    var swap = prev; prev = cur; cur = swap; cur.fill(0);
+  }
+  return best;
+}
+
+function runRatio(title, ref) {
+  var t = skeleton(title);
+  var r = skeleton(ref);
+  if (!t || !r) { return 0; }
+  /* A title of two or three short words carries too little to judge on a
+     partial run, so it has to be there in full. */
+  if (t.length < 12) { return r.indexOf(t) !== -1 ? 1 : 0; }
+  return longestRun(t, r) / t.length;
+}
+
+function agreement(title, ref) {
+  /*
+     Measured against the main title as well as the whole one. Citations
+     drop subtitles routinely, and a correct reference to "Attention is all
+     you need" should not be called wrong because the record happens to
+     carry a colon and eight more words after it. Whichever reading agrees
+     more is the one that stands.
+  */
+  var best = runRatio(title, ref);
+  var main = String(title || '').split(/[:;]|\s[-–—]\s/)[0].trim();
+  if (main && main !== title && skeleton(main).length >= 12) {
+    best = Math.max(best, runRatio(main, ref));
+  }
+  return best;
+}
+
+/*
+  Three bands rather than two, and the boundary between them means
+  something: half of a title appearing as one run is the point where a
+  match stops being plausible and starts being an accident of shared
+  vocabulary. A record that partly agrees is its own answer, and forcing it
+  into match or mismatch would invent a certainty neither number supports.
+*/
+var AGREES = 0.7;
+var DIFFERS = 0.5;
+
+function verdict(score) {
+  if (score >= AGREES) { return 'agrees'; }
+  if (score < DIFFERS) { return 'differs'; }
+  return 'partial';
+}
+
+/* ── reading each source into one shape ─────────────────── */
+
+function fromCrossref(m) {
+  var authors = (m.author || []).map(function (a) {
+    return a.family || a.name || '';
+  }).filter(Boolean);
+  var parts = ((m.issued || {})['date-parts'] || [[]])[0] || [];
+  return {
+    doi: String(m.DOI || '').toLowerCase(),
+    title: (m.title || [])[0] || '',
+    authors: authors,
+    year: parts[0] || null,
+    venue: (m['container-title'] || [])[0] || m.publisher || '',
+    type: m.type || '',
+    source: 'Crossref'
+  };
+}
+function fromDataCite(d) {
+  var a = d.attributes || {};
+  return {
+    doi: String(a.doi || '').toLowerCase(),
+    title: ((a.titles || [])[0] || {}).title || '',
+    authors: (a.creators || []).map(function (c) {
+      return c.familyName || c.name || '';
+    }).filter(Boolean),
+    year: a.publicationYear || null,
+    venue: a.publisher || '',
+    type: ((a.types || {}).resourceTypeGeneral) || '',
+    source: 'DataCite'
+  };
+}
+function fromEuropePmc(r) {
+  return {
+    doi: String(r.doi || '').toLowerCase(),
+    title: r.title || '',
+    authors: String(r.authorString || '').split(',').map(function (x) {
+      return x.trim();
+    }).filter(Boolean),
+    year: r.pubYear || null,
+    venue: r.journalTitle || '',
+    type: 'journal-article',
+    source: 'Europe PMC'
+  };
+}
+function fromOpenLibrary(b, isbn) {
+  return {
+    doi: null,
+    isbn: isbn,
+    title: b.title || '',
+    authors: [],
+    year: (String(b.publish_date || '').match(/\d{4}/) || [])[0] || null,
+    venue: (b.publishers || [])[0] || '',
+    type: 'book',
+    source: 'OpenLibrary'
+  };
+}
+
+/* ── the lookups ────────────────────────────────────────── */
+
+function byDoi(doi) {
+  return polite(CROSSREF + '/' + encodeURI(doi))
+    .then(function (d) { return fromCrossref(d.message); })
+    .catch(function (err) {
+      if (err.busy) { throw err; }
+      return get(DATACITE + encodeURIComponent(doi))
+        .then(function (d) { return fromDataCite(d.data); })
+        .catch(function (err2) {
+          if (err2.busy) { throw err2; }
+          return null;
+        });
+    });
+}
+
+function searchCrossref(ref) {
+  var url = CROSSREF + '?rows=3&select=DOI,title,author,issued,' +
+            'container-title,publisher,type&query.bibliographic=' +
+            encodeURIComponent(ref.slice(0, 400));
+  return polite(url).then(function (d) {
+    return ((d.message || {}).items || []).map(fromCrossref);
+  }).catch(function (err) {
+    if (err.busy) { throw err; }
+    return [];
+  });
+}
+
+function searchEuropePmc(ref) {
+  var url = EUROPEPMC + '?format=json&pageSize=3&query=' +
+            encodeURIComponent(ref.slice(0, 300));
+  return get(url).then(function (d) {
+    return (((d.resultList || {}).result) || []).map(fromEuropePmc);
+  }).catch(function () { return []; });
+}
+
+function byIsbn(isbn) {
+  return get(OPENLIB + isbn + '.json').then(function (b) {
+    return fromOpenLibrary(b, isbn);
+  }).catch(function () { return null; });
+}
+
+function retracted(doi) {
+  if (!doi) { return Promise.resolve(false); }
+  return get(OPENALEX + encodeURI(doi) + '?mailto=' +
+             encodeURIComponent(CONTACT))
+    .then(function (w) { return !!w.is_retracted; })
+    .catch(function () { return false; });
+}
+
+/* ── one reference, start to finish ─────────────────────── */
+
+function checkOne(ref) {
+  var doi = findDoi(ref);
+  var isbn = findIsbn(ref);
+  var arxiv = findArxiv(ref);
+  var year = findYear(ref);
+  var result = { ref: ref, given: doi || isbn || (arxiv && 'arXiv:' + arxiv) };
+
+  var step;
+
+  if (doi) {
+    step = byDoi(doi).then(function (rec) {
+      if (!rec) {
+        result.state = 'unlocatable';
+        result.says = 'The reference gives a DOI, and no index has a record '
+                    + 'under it. A DOI that resolves to nothing was either '
+                    + 'mistyped or never issued.';
+        return result;
+      }
+      result.found = rec;
+      var v = verdict(agreement(rec.title, ref));
+      if (v === 'agrees' && !yearAgrees(year, rec.year)) {
+        result.state = 'review';
+        result.says = 'The DOI resolves to a work of this title published in '
+                    + rec.year + ', where the reference says ' + year + '.';
+      } else if (v === 'agrees') {
+        result.state = 'confirmed';
+      } else if (v === 'differs') {
+        result.state = 'divergent';
+        result.says = 'The DOI is real and belongs to a different work from '
+                    + 'the one this reference describes.';
+      } else {
+        result.state = 'review';
+        result.says = 'The DOI resolves, and the record it returns only '
+                    + 'partly matches the reference as written.';
+      }
+      return result;
+    });
+  } else if (isbn) {
+    step = byIsbn(isbn).then(function (rec) {
+      if (!rec) {
+        result.state = 'unlocatable';
+        result.says = 'No book is catalogued under that ISBN.';
+        return result;
+      }
+      result.found = rec;
+      result.state = verdict(agreement(rec.title, ref)) === 'differs'
+        ? 'divergent' : 'confirmed';
+      if (result.state === 'divergent') {
+        result.says = 'The ISBN is catalogued, under a different title from '
+                    + 'the one written here.';
+      }
+      return result;
+    });
+  } else {
+    step = searchCrossref(ref).then(function (candidates) {
+      /*
+        A matching title is not on its own a matching work. The top hit for
+        a famous 2017 paper was a 2025 record carrying the same title and
+        author names at an unrelated institution - a duplicate of the kind
+        that circulates through the indexes. Between two records whose
+        titles agree, the one published when the reference says is the one
+        meant, so a candidate that agrees on both sorts ahead of one that
+        agrees on the title alone.
+      */
+      var scored = candidates.map(function (c) {
+        var score = agreement(c.title, ref);
+        return {
+          rec: c,
+          score: score,
+          solid: verdict(score) === 'agrees' && yearAgrees(year, c.year)
+        };
+      }).sort(function (a, b) {
+        if (a.solid !== b.solid) { return a.solid ? -1 : 1; }
+        return b.score - a.score;
+      });
+      var best = scored.length ? scored[0].rec : null;
+      var bestScore = scored.length ? scored[0].score : 0;
+      if (best && verdict(bestScore) === 'agrees') {
+        result.found = best;
+        if (yearAgrees(year, best.year)) {
+          result.state = 'located';
+          result.says = 'No identifier was given in the reference. This is '
+                      + 'the record that matches it.';
+        } else {
+          result.state = 'review';
+          result.says = 'A record with this title exists, published in '
+                      + best.year + ' where the reference says ' + year
+                      + '. Duplicate records of the same title do circulate, '
+                      + 'so this is worth confirming before it is relied on.';
+        }
+        return result;
+      }
+      /* Crossref does not hold everything. Before concluding that a
+         reference describes nothing, ask the index that covers what
+         Crossref does not. */
+      return searchEuropePmc(ref).then(function (more) {
+        var alt = null, altScore = 0;
+        more.forEach(function (c) {
+          var s = agreement(c.title, ref);
+          if (s > altScore) { altScore = s; alt = c; }
+        });
+        if (alt && verdict(altScore) === 'agrees') {
+          result.found = alt;
+          result.state = 'located';
+          result.says = 'No identifier was given in the reference. This is '
+                      + 'the record that matches it.';
+        } else if (best && verdict(bestScore) === 'partial') {
+          result.found = best;
+          result.state = 'review';
+          result.says = 'The closest record found agrees with part of this '
+                      + 'reference. Worth a look before it is relied on.';
+        } else {
+          result.state = 'unlocatable';
+          result.says = 'No record matching this reference was found in any '
+                      + 'of the indexes consulted.';
+        }
+        return result;
+      });
+    });
+  }
+
+  return step.then(function (r) {
+    var found = r.found && r.found.doi;
+    if (!found || r.state === 'unlocatable') { return r; }
+    return retracted(found).then(function (isRetracted) {
+      if (isRetracted) {
+        r.state = 'retracted';
+        r.says = 'The work exists and has been retracted. A retracted work '
+               + 'can be cited deliberately; it needs to be cited knowingly.';
+      }
+      return r;
+    });
+  }).catch(function (err) {
+    console.error('checkOne:', err);
+    result.state = 'unchecked';
+    result.says = err && err.busy
+      ? 'The index is rate limiting this browser and did not answer for this '
+        + 'reference. Nothing is claimed about it.'
+      : 'This reference could not be checked, so nothing is claimed about it.';
+    return result;
+  });
+}
+
+/* ── rendering ──────────────────────────────────────────── */
+
+var LABEL = {
+  confirmed: 'Confirmed',
+  located: 'Located',
+  review: 'Needs a look',
+  divergent: 'Points elsewhere',
+  unlocatable: 'Not found',
+  retracted: 'Retracted',
+  unchecked: 'Not checked'
+};
+
+function renderRow(n, r) {
+  var h = ['<div class="ref"><div class="idx">' + n + '</div><div>'];
+  h.push('<span class="state s-' + r.state + '">' +
+         esc(LABEL[r.state]) + '</span>');
+  h.push('<div class="text">' + esc(r.ref) + '</div>');
+  if (r.found) {
+    var f = r.found;
+    h.push('<div class="found"><div class="t">' + esc(f.title) + '</div>');
+    var meta = [];
+    if (f.authors && f.authors.length) {
+      meta.push(esc(f.authors.slice(0, 3).join(', ')) +
+                (f.authors.length > 3 ? ' and others' : ''));
+    }
+    if (f.year) { meta.push(esc(f.year)); }
+    if (f.venue) { meta.push(esc(f.venue)); }
+    if (f.doi) { meta.push(esc(f.doi)); }
+    else if (f.isbn) { meta.push('ISBN ' + esc(f.isbn)); }
+    meta.push(esc(f.source));
+    h.push('<div class="m">' + meta.join(' &nbsp;·&nbsp; ') + '</div></div>');
+  }
+  if (r.says) { h.push('<div class="says">' + esc(r.says) + '</div>'); }
+  h.push('</div></div>');
+  return h.join('');
+}
+
+var ORDER = ['confirmed', 'located', 'review', 'divergent', 'unlocatable',
+             'retracted', 'unchecked'];
+var TONE = { confirmed: 'ok', located: '', review: 'warn',
+             divergent: 'bad', unlocatable: 'bad', retracted: 'bad',
+             unchecked: 'warn' };
+
+function renderTiles(results, total) {
+  var counts = {};
+  results.forEach(function (r) {
+    counts[r.state] = (counts[r.state] || 0) + 1;
+  });
+  var h = ['<div class="tile"><div class="n">' + total +
+           '</div><div class="k">references read</div></div>'];
+  ORDER.forEach(function (state) {
+    if (!counts[state]) { return; }
+    h.push('<div class="tile ' + TONE[state] + '"><div class="n">' +
+           counts[state] + '</div><div class="k">' +
+           esc(LABEL[state].toLowerCase()) + '</div></div>');
+  });
+  el('tiles').innerHTML = h.join('');
+}
+
+/* ── running ────────────────────────────────────────────── */
+
+function run() {
+  if (STATE.running) { return; }
+  var refs = splitRefs(el('refs').value);
+  el('err').style.display = 'none';
+
+  if (!refs.length) {
+    el('err').textContent = 'Paste a reference list to check. One reference '
+      + 'per line, or separated by blank lines.';
+    el('err').style.display = 'block';
+    return;
+  }
+
+  var over = refs.length - FREE_LIMIT;
+  var reading = refs.slice(0, FREE_LIMIT);
+
+  STATE.running = true;
+  STATE.refs = reading;
+  STATE.results = [];
+  el('go').disabled = true;
+  el('demo').disabled = true;
+  el('rows').innerHTML = '';
+  el('tiles').innerHTML = '';
+  el('out').classList.add('on');
+
+  var i = 0;
+  function next() {
+    if (i >= reading.length) { return Promise.resolve(); }
+    var n = i + 1;
+    el('progress').textContent = 'reading reference ' + n + ' of ' +
+                                 reading.length + '...';
+    return checkOne(reading[i++]).then(function (r) {
+      STATE.results.push(r);
+      el('rows').insertAdjacentHTML('beforeend', renderRow(n, r));
+      renderTiles(STATE.results, reading.length);
+      return next();
+    });
+  }
+
+  next().then(function () {
+    el('progress').textContent = over > 0
+      ? 'Read ' + reading.length + ' references. ' + over + ' more were '
+        + 'pasted and not read: the browser check stops at ' + FREE_LIMIT + '.'
+      : 'Read ' + reading.length + ' references.';
+    STATE.running = false;
+    el('go').disabled = false;
+    el('demo').disabled = false;
+  });
+}
+
+var EXAMPLE = [
+  'Shannon, C. E. (1948). A mathematical theory of communication. Bell System Technical Journal, 27(3), 379-423.',
+  'Kucsko, G., Maurer, P. C., Yao, N. Y., et al. (2013). Nanometre-scale thermometry in a living cell. Nature, 500(7460), 54-58. https://doi.org/10.1038/nature12373',
+  'Wakefield, A. J., et al. (1998). Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children. The Lancet, 351(9103), 637-641. https://doi.org/10.1016/S0140-6736(97)11096-0',
+  'Merriweather, J. P., & Okonkwo, A. (2021). Recursive semantic drift in low-resource transformer alignment. Journal of Computational Semiotics, 14(2), 233-259.',
+  'Vaswani, A., Shazeer, N., Parmar, N., et al. (2017). Attention is all you need. Advances in Neural Information Processing Systems, 30.',
+  'Halpern, D. F. (2019). The cognitive architecture of distributed proof verification. Nature, 500(7460), 54-58. https://doi.org/10.1038/nature12373'
+].join('\n\n');
+
+function count() {
+  var n = splitRefs(el('refs').value).length;
+  el('counter').textContent = n ? n + (n === 1 ? ' reference' : ' references')
+                                : '';
+}
+
+function wire() {
+  el('go').onclick = run;
+  el('refs').addEventListener('input', count);
+  el('demo').onclick = function () {
+    el('refs').value = EXAMPLE;
+    count();
+    run();
+  };
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wire);
+} else { wire(); }
+</script>
+
+</body>
+</html>
