@@ -3,620 +3,1407 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Epistemend — does every place your work lives still agree?</title>
-<meta name="description" content="Reconcile a body of published work against every place it lives. Paste an ORCID; the check runs in your browser and nothing is sent anywhere.">
+<title>Epistemend — check a published record</title>
+<meta name="description" content="Paste an ORCID. Get one document showing what an author's published record says, where it lives, and what disagrees. Runs in your browser; nothing is sent anywhere.">
 <link rel="canonical" href="https://www.epistemend.org/">
 <meta name="robots" content="index, follow">
-<meta property="og:title" content="Epistemend — does every place your work lives still agree?">
-<meta property="og:description" content="Paste an ORCID. The reconciliation runs in your browser.">
+<meta property="og:title" content="Epistemend — check a published record">
+<meta property="og:description" content="One document: what a record says, where it lives, and what disagrees.">
 <meta property="og:type" content="website">
 <style>
 /* ============================================================
-   EPISTEMEND v1.0.0
-   Reconciliation of a published record against every place it lives
+   EPISTEMEND v2.0.0
+   One document from an ORCID: what the record says, where it
+   lives, and what disagrees.
    F-Keys Creative LLC | www.f-keys.com
    ============================================================
    WORKFLOW STACK:
-     1. read an ORCID from the field, normalise the three forms
-        people paste, and reject a bad check digit before any
-        request goes out
-     2. ORCID public API  -> what the author says they published
-     3. OpenAlex          -> what the literature indexes, and who
-                             has cited it, paged to the end
-     4. render a report whose numbers reconcile, and offer the
-        same JSON the command line tool writes
+     1. read and validate the ORCID before any request
+     2. run nine checks against four public APIs
+     3. render each as an identical section: a headline, tiles,
+        one plain sentence, then detail
+     4. state what could not be checked, never imply it passed
 
    ASSET MANIFEST:
      none. No fonts, no libraries, no analytics, no images.
 
    BOOT ORDER:
-     styles -> DOM -> wire() binds the form -> idle until asked
+     styles -> DOM -> wire() -> idle until asked
    ============================================================ */
 :root{
-  --bg:#0c0e14; --surface:#161b28; --line:#232a3d;
-  --text:#f0f2f8; --dim:#98a2be;
-  --accent:#60a0ff; --green:#3ddba8; --amber:#ffc94d; --red:#ff7070;
+  --bg:#0b0d13; --panel:#12151f; --panel2:#0e1119; --line:#222738;
+  --line2:#2c3348;
+  --ink:#f2f4f9; --dim:#96a0ba; --faint:#6d7793;
+  --accent:#5b9cff; --ok:#3ddba8; --warn:#ffc857; --bad:#ff6b6b;
   --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);line-height:1.65;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  -webkit-font-smoothing:antialiased}
-.wrap{max-width:1000px;margin:0 auto;padding:0 22px}
-a{color:var(--accent)}
-h1,h2,h3{line-height:1.25;font-weight:650}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  line-height:1.6;-webkit-font-smoothing:antialiased;font-size:16px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3{line-height:1.25;font-weight:600;letter-spacing:-.01em}
 
-header{border-bottom:1px solid var(--line);padding:54px 0 40px;margin-bottom:44px}
-.mark{font-family:var(--mono);font-size:13px;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--dim);margin-bottom:16px}
-h1{font-size:clamp(30px,5vw,46px);letter-spacing:-.02em;max-width:20ch}
-.lede{margin-top:18px;font-size:18px;color:var(--dim);max-width:62ch}
+/* ── masthead ─────────────────────────────────────────── */
+.masthead{border-bottom:1px solid var(--line);padding:56px 0 44px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:18px}
+h1{font-size:clamp(28px,4.4vw,42px);max-width:19ch}
+.lede{margin-top:16px;font-size:17px;color:var(--dim);max-width:60ch}
 
-section{margin-bottom:52px}
-h2{font-size:22px;margin-bottom:14px}
-p{max-width:70ch;margin-bottom:14px}
-.muted{color:var(--dim)}
+/* ── the console ──────────────────────────────────────── */
+.console{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:28px;margin:36px 0 8px}
+.field{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch}
+label{display:block;font-size:12.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:10px;font-weight:500}
+input[type=text]{flex:1 1 320px;background:var(--panel2);
+  border:1px solid var(--line2);border-radius:8px;color:var(--ink);
+  padding:14px 16px;font-family:var(--mono);font-size:16px;min-width:0}
+input[type=text]::placeholder{color:var(--faint)}
+input[type=text]:focus{outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(91,156,255,.18)}
+button{background:var(--accent);color:#06090f;border:0;border-radius:8px;
+  padding:14px 26px;font-size:15.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;white-space:nowrap}
+button:hover:not(:disabled){filter:brightness(1.08)}
+button:disabled{opacity:.5;cursor:default}
+button.ghost{background:transparent;color:var(--dim);
+  border:1px solid var(--line2);font-weight:500;padding:14px 18px}
+button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim)}
+.hint{margin-top:14px;font-size:14px;color:var(--faint)}
+.hint b{color:var(--dim);font-weight:500}
+.err{margin-top:14px;font-size:15px;color:var(--bad)}
 
-/* the tool */
-.tool{background:var(--surface);border:1px solid var(--line);border-radius:10px;
-  padding:26px;margin:30px 0}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-label{display:block;font-size:13px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--dim);margin-bottom:9px}
-input[type=text]{flex:1 1 300px;background:#0a0c12;border:1px solid var(--line);
-  border-radius:6px;color:var(--text);padding:12px 14px;font-family:var(--mono);
-  font-size:15px}
-input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px}
-button{background:var(--accent);color:#06090f;border:0;border-radius:6px;
-  padding:12px 20px;font-size:15px;font-weight:650;cursor:pointer;font-family:inherit}
-button:hover{filter:brightness(1.1)}
-button.ghost{background:transparent;color:var(--text);border:1px solid var(--line);
-  font-weight:500}
-button:disabled{opacity:.55;cursor:default}
-.note{font-size:14px;color:var(--dim);margin-top:12px}
-.warn{color:var(--amber)}
-.bad{color:var(--red)}
-.ok{color:var(--green)}
+/* ── progress ─────────────────────────────────────────── */
+.steps{margin-top:22px;display:none}
+.steps.on{display:block}
+.step{display:flex;align-items:center;gap:12px;padding:7px 0;
+  font-size:14.5px;color:var(--faint);border-top:1px solid var(--line)}
+.step:first-child{border-top:0}
+.step .dot{width:7px;height:7px;border-radius:50%;background:var(--line2);
+  flex:0 0 7px}
+.step.run{color:var(--ink)}
+.step.run .dot{background:var(--accent)}
+.step.done{color:var(--dim)}
+.step.done .dot{background:var(--ok)}
+.step.fail{color:var(--warn)}
+.step.fail .dot{background:var(--warn)}
+.step .t{margin-left:auto;font-family:var(--mono);font-size:12.5px;
+  color:var(--faint)}
 
-.progress{font-family:var(--mono);font-size:13.5px;color:var(--dim);
-  white-space:pre-wrap;margin-top:16px;min-height:1.2em}
+/* ── the document ─────────────────────────────────────── */
+#doc{display:none;margin-top:56px}
+#doc.on{display:block}
+.dochead{border-bottom:1px solid var(--line);padding-bottom:26px;
+  margin-bottom:8px}
+.dochead h2{font-size:26px}
+.dochead .meta{margin-top:8px;font-family:var(--mono);font-size:13px;
+  color:var(--faint)}
 
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
-  gap:12px;margin:22px 0}
-.card{background:#0a0c12;border:1px solid var(--line);border-radius:8px;padding:15px}
-.card .n{font-size:27px;font-family:var(--mono);font-weight:650}
-.card .k{font-size:12.5px;color:var(--dim);letter-spacing:.06em;
-  text-transform:uppercase;margin-top:5px}
+section.block{border-bottom:1px solid var(--line);padding:32px 0}
+section.block h3{font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;margin-bottom:20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden;margin-bottom:20px}
+.tile{background:var(--panel2);padding:16px 18px}
+.tile .n{font-family:var(--mono);font-size:26px;font-weight:600;
+  line-height:1.1}
+.tile .k{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.35}
+.tile.warn .n{color:var(--warn)}
+.tile.bad .n{color:var(--bad)}
+.tile.ok .n{color:var(--ok)}
 
-.recon{font-family:var(--mono);font-size:14px;background:#0a0c12;
-  border:1px solid var(--line);border-left:3px solid var(--green);
-  border-radius:6px;padding:13px 15px;margin:18px 0;color:var(--dim)}
+.says{font-size:16px;color:var(--ink);max-width:68ch;margin-bottom:14px}
+.detail{font-size:14.5px;color:var(--dim);max-width:72ch}
+.detail li{margin:5px 0 5px 18px}
+.detail code{font-family:var(--mono);font-size:13px;color:var(--dim)}
+.none{color:var(--faint);font-size:14.5px}
+.sectionerr{color:var(--warn);font-size:14.5px}
 
-.tbl{width:100%;border-collapse:collapse;margin-top:18px;font-size:14.5px}
-.tbl th{text-align:left;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--dim);border-bottom:1px solid var(--line);padding:9px 10px;font-weight:600}
-.tbl td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}
-.tbl td.n{font-family:var(--mono);white-space:nowrap;text-align:right}
-.scroller{overflow-x:auto}
-.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:20px;
-  border:1px solid var(--line);color:var(--dim);font-family:var(--mono)}
-.pill.yes{border-color:var(--green);color:var(--green)}
-.pill.no{border-color:var(--line);color:var(--dim)}
+.notcovered{padding:32px 0 8px}
+.notcovered h3{font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;margin-bottom:16px}
+.notcovered ul{list-style:none}
+.notcovered li{font-size:14.5px;color:var(--dim);margin:7px 0;
+  padding-left:16px;border-left:2px solid var(--line)}
 
-.works li{margin-bottom:9px;max-width:74ch}
-ul{padding-left:20px}
+footer{border-top:1px solid var(--line);margin-top:64px;padding:34px 0 70px;
+  color:var(--faint);font-size:14.5px}
+footer p{margin:5px 0}
+pre{font-family:var(--mono);background:var(--panel2);
+  border:1px solid var(--line);border-radius:8px;padding:16px;
+  overflow-x:auto;font-size:13.5px;color:var(--dim);margin:14px 0}
 
-footer{border-top:1px solid var(--line);margin-top:64px;padding:32px 0 60px;
-  color:var(--dim);font-size:14.5px}
-code{font-family:var(--mono);background:#0a0c12;border:1px solid var(--line);
-  border-radius:4px;padding:1px 6px;font-size:13.5px}
-pre{font-family:var(--mono);background:#0a0c12;border:1px solid var(--line);
-  border-radius:6px;padding:14px;overflow-x:auto;font-size:13.5px;margin-bottom:14px}
-.hide{display:none}
+@media print{
+  body{background:#fff;color:#000}
+  .console,.steps,.masthead .lede,footer{display:none}
+  section.block{break-inside:avoid}
+}
 </style>
 </head>
 <body>
 
-<header>
+<div class="masthead">
   <div class="wrap">
-    <div class="mark">Epistemend</div>
-    <h1>Does every place your work lives still agree?</h1>
-    <p class="lede">Publishing is the easy part. Keeping a record straight across
-    ORCID, OpenAlex, Zenodo and Wikidata is the part nobody checks, and it goes
-    wrong quietly.</p>
+    <div class="eyebrow">Epistemend</div>
+    <h1>Check a published record in one pass.</h1>
+    <p class="lede">Paste an ORCID. You get one document: what the record
+    says, where the work actually lives, and what disagrees between them.</p>
   </div>
-</header>
+</div>
 
 <div class="wrap">
 
-  <section>
-    <p>A deposit gets a DOI and the DOI never reaches the index. A work is
-    indexed under a name the author never claimed. A record cites something
-    that no longer resolves. None of this announces itself, and all of it is
-    checkable.</p>
-    <p>So check it. Paste an ORCID below.</p>
-
-    <div class="tool">
-      <label for="orcid">ORCID</label>
-      <div class="row">
-        <input type="text" id="orcid" placeholder="0000-0002-1825-0097"
-               autocomplete="off" spellcheck="false">
-        <button id="go">Reconcile</button>
-        <button id="mine" class="ghost">Use the author's</button>
-      </div>
-      <div class="note">Runs entirely in this page. The requests go from your
-      browser to ORCID and OpenAlex directly &mdash; nothing is sent to us, and
-      there is nothing here to log it with.</div>
-      <div class="progress" id="progress"></div>
+  <div class="console">
+    <label for="orcid">ORCID identifier</label>
+    <div class="field">
+      <input type="text" id="orcid" placeholder="0000-0002-1825-0097"
+             autocomplete="off" spellcheck="false" inputmode="text"
+             aria-describedby="hint">
+      <button id="go">Run the checks</button>
+      <button id="demo" class="ghost">Use an example</button>
     </div>
+    <div class="hint" id="hint">Takes about a minute.
+      <b>Everything runs in this page</b> — the requests go from your browser
+      straight to ORCID, OpenAlex, Zenodo and Wikidata. Nothing reaches us,
+      and there is nothing here to record it with.</div>
+    <div class="err" id="err" style="display:none"></div>
+    <div class="steps" id="steps"></div>
+  </div>
 
-    <div id="report" class="hide"></div>
-  </section>
+  <div id="doc">
+    <div class="dochead">
+      <h2 id="who">—</h2>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div id="blocks"></div>
+    <div class="notcovered">
+      <h3>Not covered here</h3>
+      <ul>
+        <li>Whether each deposited document agrees with its own record —
+            needs the files, so it runs on the command line.</li>
+        <li>Whether outbound links still resolve — a browser cannot check
+            other people's servers, so this runs on the command line too.</li>
+        <li>Anything requiring a repository to read.</li>
+      </ul>
+      <p class="detail" style="margin-top:16px">Nothing above is scored or
+      graded. Each section states what was found and what could not be
+      reached; the reader draws the conclusion, because the same fact means
+      different things for a first-year student and a professor of thirty
+      years.</p>
+    </div>
+  </div>
 
-  <section>
-    <h2>The same thing, on the command line</h2>
+  <section class="block" style="border-bottom:0">
+    <h3>The same checks, on the command line</h3>
     <pre>pip install authorecon
-authorecon-discover 0000-0002-1825-0097 --out works.json</pre>
-    <p class="muted">Standard library only, no dependencies. The page and the
-    package do the same arithmetic, and the JSON this page offers is the file
-    that command writes.</p>
-  </section>
-
-  <section>
-    <h2>What it will not do</h2>
-    <p>It reports what it could not reach rather than rounding it away. Every
-    number reconciles out loud &mdash; works indexed equals works with a DOI plus
-    works without one &mdash; because an unexplained gap between two numbers is
-    indistinguishable from a bug.</p>
-    <p>A mistyped ORCID is refused against its check digit before a single
-    request is made. One wrong character otherwise returns an empty result that
-    reads as a career that never happened.</p>
+authorecon-report 0000-0002-1825-0097</pre>
+    <p class="detail">Nineteen checks, no dependencies. The command line
+    version also reads deposited PDFs, resolves outbound links, and inspects
+    dependency graphs — the things a browser is not allowed to do.</p>
   </section>
 
 </div>
 
 <footer>
   <div class="wrap">
-    <p>Epistemend is part of <a href="https://f-keys.com">F-Keys</a>.
-    Vincent Gonzalez &middot;
-    <a href="https://orcid.org/0009-0005-3640-014X">ORCID 0009-0005-3640-014X</a></p>
-    <p class="muted">www.f-keys.com &nbsp;|&nbsp; &copy; 2026 F-Keys Creative LLC</p>
+    <p>Epistemend is part of <a href="https://f-keys.com">F-Keys</a>.</p>
+    <p>www.f-keys.com &nbsp;|&nbsp; &copy; 2026 F-Keys Creative LLC</p>
   </div>
 </footer>
 
 <script>
-/* ============================================================
-   All state in one object, per the house rule. Nothing else is
-   mutable at module scope.
-   ============================================================ */
+/* All mutable state in one object, per the house rule. */
 var STATE = {
   running: false,
-  doc: null,
-  alex: null,
-  blobUrl: null
+  orcid: null,
+  name: null,
+  works: [],
+  alex: {},
+  concepts: {},
+  results: {}
 };
 
-var ORCID_WORKS = 'https://pub.orcid.org/v3.0/{id}/works';
+var ORCID_WORKS  = 'https://pub.orcid.org/v3.0/{id}/works';
 var ORCID_PERSON = 'https://pub.orcid.org/v3.0/{id}/person';
-var OPENALEX = 'https://api.openalex.org/works';
-var OPENALEX_MAX = 2000;
+var OA_WORKS     = 'https://api.openalex.org/works';
+var OA_AUTHORS   = 'https://api.openalex.org/authors';
+var OA_ONE       = 'https://api.openalex.org/works/doi:';
+var ZENODO       = 'https://zenodo.org/api/records/';
+var ZENODO_Q     = 'https://zenodo.org/api/records';
+var WD_API       = 'https://www.wikidata.org/w/api.php';
+var WD_SPARQL    = 'https://query.wikidata.org/sparql';
+
+var CHECKS = [
+  { id: 'identity',  label: 'Identity' },
+  { id: 'record',    label: 'The record' },
+  { id: 'venues',    label: 'Where it was published' },
+  { id: 'citations', label: 'Citations' },
+  { id: 'timing',    label: 'Reaching the index' },
+  { id: 'graph',     label: 'The knowledge graph' },
+  { id: 'integrity', label: 'Deposit integrity' },
+  { id: 'abstracts', label: 'Abstracts' },
+  { id: 'retract',   label: 'Retractions' }
+];
 
 function el(id) { return document.getElementById(id); }
-
-function say(text) {
-  // READS: nothing   WRITES: the progress line only
-  el('progress').textContent = text;
-}
-
-/* ── the identifier, checked before anything is fetched ────── */
-
-function normaliseOrcid(value) {
-  var text = String(value || '').trim();
-  var prefixes = ['https://orcid.org/', 'http://orcid.org/', 'orcid.org/'];
-  for (var i = 0; i < prefixes.length; i++) {
-    if (text.toLowerCase().indexOf(prefixes[i]) === 0) {
-      text = text.slice(prefixes[i].length);
-    }
-  }
-  text = text.replace(/[-\s]/g, '').toUpperCase();
-  if (text.length !== 16) {
-    return { error: 'An ORCID has 16 characters; this has ' + text.length + '.' };
-  }
-  if (!/^\d{15}[\dX]$/.test(text)) {
-    return { error: 'An ORCID is 15 digits and a final digit or X.' };
-  }
-  var hyphenated = text.replace(/(.{4})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4');
-  if (!validChecksum(text)) {
-    return { error: hyphenated + ' is not a valid ORCID. The check digit does ' +
-                    'not match, which almost always means a typo.' };
-  }
-  return { orcid: hyphenated };
-}
-
-function validChecksum(digits) {
-  // ISO 7064 MOD 11-2, the check ORCID itself uses.
-  var total = 0, i;
-  for (i = 0; i < 15; i++) { total = (total + parseInt(digits[i], 10)) * 2; }
-  var expected = (12 - (total % 11)) % 11;
-  return digits[15] === (expected === 10 ? 'X' : String(expected));
-}
-
-/* ── the network ───────────────────────────────────────────── */
-
-function getJson(url) {
-  return fetch(url, { headers: { 'Accept': 'application/json' } })
-    .then(function (r) {
-      if (!r.ok) { throw new Error(r.status + ' from ' + url); }
-      return r.json();
-    });
-}
-
-function authorName(orcid) {
-  return getJson(ORCID_PERSON.replace('{id}', orcid)).then(function (p) {
-    var name = (p && p.name) || null;
-    if (!name) { return null; }
-    var given = (name['given-names'] && name['given-names'].value) || '';
-    var family = (name['family-name'] && name['family-name'].value) || '';
-    return ((given + ' ' + family).trim()) || null;
-  }).catch(function (err) {
-    console.error('authorName:', err);
-    return null;
-  });
-}
-
-function fromOrcid(orcid) {
-  return getJson(ORCID_WORKS.replace('{id}', orcid)).then(function (doc) {
-    var out = [];
-    var groups = (doc && doc.group) || [];
-    groups.forEach(function (g) {
-      var summaries = g['work-summary'] || [];
-      if (!summaries.length) { return; }
-      var first = summaries[0];
-      var doi = null;
-      var ids = (g['external-ids'] && g['external-ids']['external-id']) || [];
-      ids.forEach(function (x) {
-        if (!doi && String(x['external-id-type'] || '').toLowerCase() === 'doi') {
-          doi = String(x['external-id-value'] || '').toLowerCase();
-        }
-      });
-      var title = '';
-      try { title = first.title.title.value; } catch (err) { title = ''; }
-      var year = null;
-      try { year = first['publication-date'].year.value; } catch (err) { year = null; }
-      out.push({
-        title: String(title || '').trim(),
-        doi: doi,
-        date: year,
-        type: String(first.type || '').toLowerCase().replace(/_/g, '-') || null
-      });
-    });
-    return out;
-  });
-}
-
-function fromOpenAlex(orcid, onPage) {
-  // Pages to the end. Reading one page and reporting its count as the total
-  // is how a record with 1,972 works reports 191 and looks complete.
-  var byDoi = {}, noDoi = 0, total = 0, cursor = '*';
-
-  function step() {
-    if (!cursor || Object.keys(byDoi).length >= OPENALEX_MAX) {
-      return Promise.resolve();
-    }
-    var url = OPENALEX + '?filter=author.orcid:' + encodeURIComponent(orcid) +
-              '&per-page=200&cursor=' + encodeURIComponent(cursor);
-    return getJson(url).then(function (doc) {
-      total = (doc.meta && doc.meta.count) || total;
-      var results = doc.results || [];
-      if (!results.length) { cursor = null; return; }
-      results.forEach(function (w) {
-        var doi = String(w.doi || '').toLowerCase();
-        if (doi.indexOf('https://doi.org/') === 0) { doi = doi.slice(16); }
-        if (!doi) { noDoi++; return; }
-        byDoi[doi] = {
-          openalex: w.id,
-          cited_by: w.cited_by_count || 0,
-          open_access: !!(w.open_access && w.open_access.is_oa),
-          type: w.type || null
-        };
-      });
-      cursor = (doc.meta && doc.meta.next_cursor) || null;
-      if (onPage) { onPage(Object.keys(byDoi).length, total); }
-      return step();
-    });
-  }
-
-  return step().then(function () {
-    return {
-      byDoi: byDoi, noDoi: noDoi, total: total,
-      pagedToEnd: (Object.keys(byDoi).length < OPENALEX_MAX) || !cursor
-    };
-  });
-}
-
-
-/* ── Zenodo mints two DOIs per work ────────────────────────────
-   A version DOI and a concept DOI. An author claims one on ORCID,
-   OpenAlex indexes the other, and comparing raw DOIs reports the
-   same work as missing.
-
-   Measured on the record this was built for: 41 reported unclaimed,
-   32 already on the record under their other DOI, and all of the
-   remainder reachable from a DOI already claimed. The true answer
-   was zero. Both sides are resolved to a concept before comparing.
-   ──────────────────────────────────────────────────────────── */
-var CONCEPTS = {};
-
-function conceptDoi(doi) {
-  if (!doi) { return Promise.resolve(doi); }
-  var low = String(doi).toLowerCase();
-  if (CONCEPTS[low]) { return Promise.resolve(CONCEPTS[low]); }
-  if (low.indexOf('zenodo.') === -1) {
-    CONCEPTS[low] = low;
-    return Promise.resolve(low);
-  }
-  var rid = low.split('zenodo.').pop();
-  if (!/^\d+$/.test(rid)) {
-    CONCEPTS[low] = low;
-    return Promise.resolve(low);
-  }
-  return getJson('https://zenodo.org/api/records/' + rid).then(function (rec) {
-    // A DOI that will not resolve is returned unchanged rather than dropped
-    // or merged. A work nobody can resolve should be reported as itself.
-    CONCEPTS[low] = String(rec.conceptdoi || low).toLowerCase();
-    return CONCEPTS[low];
-  }).catch(function (err) {
-    console.error('conceptDoi:', err);
-    CONCEPTS[low] = low;
-    return low;
-  });
-}
-
-function resolveAll(dois, onProgress) {
-  var list = dois.slice(), done = 0, out = {};
-  function next() {
-    if (!list.length) { return Promise.resolve(out); }
-    var doi = list.shift();
-    return conceptDoi(doi).then(function (c) {
-      out[doi] = c;
-      done++;
-      if (onProgress && done % 5 === 0) { onProgress(done, done + list.length); }
-      return next();
-    });
-  }
-  return next();
-}
-
-/* ── the report ────────────────────────────────────────────── */
 
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function render(doc) {
-  var works = doc.works;
-  var claimed = works.filter(function (w) { return !w.unclaimed; });
-  var unclaimed = works.filter(function (w) { return w.unclaimed; });
-  var indexed = claimed.filter(function (w) { return w.in_openalex; });
-  var missing = claimed.filter(function (w) { return w.doi && !w.in_openalex; });
-  var noDoiClaimed = claimed.filter(function (w) { return !w.doi; });
-  var cites = works.reduce(function (a, w) { return a + (w.cited_by || 0); }, 0);
-
-  var h = [];
-  h.push('<h2>' + esc(doc.author.name || 'This record') + '</h2>');
-  h.push('<p class="muted">' + esc(doc.author.orcid) + '</p>');
-
-  h.push('<div class="cards">');
-  h.push(card(claimed.length, 'claimed on ORCID'));
-  h.push(card(doc.openalex_total, 'indexed by OpenAlex'));
-  h.push(card(unclaimed.length, 'indexed, not claimed',
-              unclaimed.length ? 'amber' : ''));
-  h.push(card(missing.length, 'claimed, not indexed',
-              missing.length ? 'amber' : ''));
-  h.push(card(cites, 'citations recorded'));
-  h.push('</div>');
-
-  h.push('<div class="recon">' +
-    esc(doc.openalex_total) + ' indexed = ' + esc(doc.openalex_with_doi) +
-    ' with a DOI + ' + esc(doc.openalex_without_doi) + ' without' +
-    (doc.paged_to_end ? '' : '   — stopped at the ' + OPENALEX_MAX +
-      ' work cap, so these cover what was read') +
-    '</div>');
-
-  if (noDoiClaimed.length) {
-    h.push('<p class="warn">' + noDoiClaimed.length + ' claimed work' +
-      (noDoiClaimed.length === 1 ? ' has' : 's have') + ' no DOI on the ORCID ' +
-      'record, so nothing can be matched against the literature for ' +
-      (noDoiClaimed.length === 1 ? 'it' : 'them') + '.</p>');
-  }
-
-  if (doc.merged_versions) {
-    h.push('<div class="recon">' + esc(doc.merged_versions) +
-      ' indexed work' + (doc.merged_versions === 1 ? '' : 's') +
-      ' already on the record under another Zenodo DOI, or another version ' +
-      'of one already counted</div>');
-  }
-
-  if (!unclaimed.length) {
-    h.push('<p class="ok" style="margin-top:20px">Nothing is missing. Every ' +
-      'work OpenAlex attributes to this ORCID is already on the record.</p>');
-  }
-
-  if (unclaimed.length) {
-    h.push('<h3 style="margin-top:26px">Indexed but not on the ORCID record</h3>');
-    h.push('<p class="muted">OpenAlex attributes ' + unclaimed.length +
-      ' work' + (unclaimed.length === 1 ? '' : 's') + ' to this ORCID that the ' +
-      'record does not list. Usually these are yours and unclaimed; ' +
-      'occasionally they belong to somebody else.</p>');
-    h.push(table(unclaimed.slice(0, 60), true));
-    if (unclaimed.length > 60) {
-      h.push('<p class="muted">Showing 60 of ' + unclaimed.length +
-             '. The JSON has all of them.</p>');
-    }
-  }
-
-  h.push('<h3 style="margin-top:26px">Claimed works</h3>');
-  h.push(table(claimed.slice(0, 120), false));
-  if (claimed.length > 120) {
-    h.push('<p class="muted">Showing 120 of ' + claimed.length +
-           '. The JSON has all of them.</p>');
-  }
-
-  h.push('<div class="row" style="margin-top:22px">' +
-    '<button id="dl" class="ghost">Download the JSON</button></div>');
-
-  var target = el('report');
-  target.innerHTML = h.join('');
-  target.classList.remove('hide');
-
-  var dl = el('dl');
-  if (dl) { dl.onclick = function () { download(doc); }; }
+/* "1 records share this name" is the sort of thing a reader stops trusting
+   a document over, however right the number is. */
+function count(n, one, many) {
+  return n + ' ' + (n === 1 ? one : (many || one + 's'));
 }
 
-function card(n, k, tone) {
-  return '<div class="card"><div class="n"' +
-    (tone === 'amber' ? ' style="color:var(--amber)"' : '') + '>' +
-    esc(n) + '</div><div class="k">' + esc(k) + '</div></div>';
-}
+function verb(n, one, many) { return n === 1 ? one : many; }
 
-function table(rows, unclaimedMode) {
-  var h = ['<div class="scroller"><table class="tbl"><thead><tr>',
-           '<th>Title</th><th>Year</th><th>Type</th>',
-           '<th style="text-align:right">Cited</th>'];
-  h.push(unclaimedMode ? '<th>DOI</th>' : '<th>Indexed</th>');
-  h.push('</tr></thead><tbody>');
-  rows.forEach(function (w) {
-    h.push('<tr>');
-    h.push('<td>' + esc(w.title || '—') +
-      (w.doi ? '<br><span class="muted" style="font-size:12.5px">' +
-        esc(w.doi) + '</span>' : '') + '</td>');
-    h.push('<td class="n">' + esc(w.date || '—') + '</td>');
-    h.push('<td>' + esc(w.type || '—') + '</td>');
-    h.push('<td class="n">' + esc(w.cited_by == null ? '—' : w.cited_by) + '</td>');
-    if (unclaimedMode) {
-      h.push('<td>' + (w.openalex ?
-        '<a href="' + esc(w.openalex) + '">OpenAlex</a>' : '—') + '</td>');
-    } else {
-      h.push('<td><span class="pill ' + (w.in_openalex ? 'yes' : 'no') + '">' +
-        (w.in_openalex ? 'yes' : 'no') + '</span></td>');
-    }
-    h.push('</tr>');
+/* ── the identifier, checked before any request ─────────── */
+
+function readOrcid(value) {
+  var t = String(value || '').trim();
+  ['https://orcid.org/', 'http://orcid.org/', 'orcid.org/'].forEach(function (p) {
+    if (t.toLowerCase().indexOf(p) === 0) { t = t.slice(p.length); }
   });
-  h.push('</tbody></table></div>');
+  t = t.replace(/[-\s]/g, '').toUpperCase();
+  if (!t.length) {
+    return { error: 'Paste an ORCID to check. It looks like ' +
+                    '0000-0002-1825-0097, and every ORCID profile shows it.' };
+  }
+  if (t.length !== 16) {
+    return { error: 'An ORCID has 16 characters. That one has ' + t.length + '.' };
+  }
+  if (!/^\d{15}[\dX]$/.test(t)) {
+    return { error: 'An ORCID is 15 digits and a final digit or X.' };
+  }
+  var total = 0, i;
+  for (i = 0; i < 15; i++) { total = (total + parseInt(t[i], 10)) * 2; }
+  var expect = (12 - (total % 11)) % 11;
+  var hyphen = t.replace(/(.{4})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4');
+  if (t[15] !== (expect === 10 ? 'X' : String(expect))) {
+    return { error: hyphen + ' is not a valid ORCID — the check digit does ' +
+                    'not match, which almost always means a typo.' };
+  }
+  return { orcid: hyphen };
+}
+
+/* ── network ────────────────────────────────────────────── */
+
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+/*
+  A rate limit is not an answer.
+
+  Every check here has a branch for a request that failed, and that branch
+  reads as a finding: not indexed, no item, no abstract. Folding a 429 into
+  it turns "the server was busy" into a statement about the author's record,
+  which is the one failure this whole tool exists to avoid. So a busy
+  response is retried, and if it still will not answer it is raised as
+  something the caller can recognise and count separately.
+*/
+function get(url, accept, attempt) {
+  attempt = attempt || 0;
+  return fetch(url, { headers: { 'Accept': accept || 'application/json' } })
+    .then(function (r) {
+      if (r.status === 429 || r.status === 503) {
+        if (attempt < 4) {
+          return sleep(500 * Math.pow(2, attempt)).then(function () {
+            return get(url, accept, attempt + 1);
+          });
+        }
+        var busy = new Error('the index is rate limiting this browser');
+        busy.busy = true;
+        throw busy;
+      }
+      if (!r.ok) { throw new Error(r.status + ' from ' + url.slice(0, 48)); }
+      return r.json();
+    });
+}
+
+/* OpenAlex allows ten requests a second. Asking faster is what produced the
+   429s in the first place, so the throttle belongs here rather than in a
+   retry loop apologising for it. */
+var OA_GAP = 110;
+var oaNext = 0;
+
+function oa(url) {
+  var now = Date.now();
+  var wait = Math.max(0, oaNext - now);
+  oaNext = Math.max(now, oaNext) + OA_GAP;
+  return sleep(wait).then(function () { return get(url); });
+}
+
+/* A counter that keeps "we could not look" apart from "there was nothing
+   there". Both end a request; only one of them is a finding. */
+function Box() { this.busy = 0; this.missing = 0; }
+Box.prototype.note = function (err) {
+  if (err && err.busy) { this.busy++; } else { this.missing++; }
+};
+
+function zenodoId(doi) {
+  var m = /zenodo\.(\d+)$/i.exec(doi || '');
+  return m ? m[1] : null;
+}
+
+/*
+  Four checks want the same Zenodo record, and fetching it four times is how
+  a one-minute report becomes a five-minute one and then starts colliding
+  with the repository's own rate limit. One fetch, kept.
+*/
+var records = {};
+
+function zenodoRecord(id) {
+  if (records[id]) { return Promise.resolve(records[id]); }
+  return get(ZENODO + id).then(function (rec) {
+    records[id] = rec;
+    return rec;
+  });
+}
+
+function conceptOf(doi) {
+  if (!doi) { return Promise.resolve(doi); }
+  var low = String(doi).toLowerCase();
+  if (STATE.concepts[low]) { return Promise.resolve(STATE.concepts[low]); }
+  var id = zenodoId(low);
+  if (!id) { STATE.concepts[low] = low; return Promise.resolve(low); }
+  return zenodoRecord(id).then(function (rec) {
+    STATE.concepts[low] = String(rec.conceptdoi || low).toLowerCase();
+    return STATE.concepts[low];
+  }).catch(function (err) {
+    console.error('conceptOf:', err);
+    STATE.concepts[low] = low;
+    return low;
+  });
+}
+
+/*
+  Resolving concept DOIs one record at a time is a request per work per
+  system, which is slow and is the quickest route to the repository's rate
+  limit. Zenodo will answer for forty at once.
+
+  The batch does not always return everything asked for - a test of five
+  came back with four - so whatever it misses is asked about individually.
+  A DOI the search overlooked is not a DOI without a concept, and treating
+  it as one is how a duplicate becomes an accusation.
+*/
+function resolveConcepts(dois) {
+  var pending = [], seen = {};
+  dois.forEach(function (d) {
+    var low = String(d || '').toLowerCase();
+    if (low && !seen[low] && !STATE.concepts[low] && zenodoId(low)) {
+      seen[low] = true;
+      pending.push(low);
+    }
+  });
+
+  var chunks = [], i;
+  for (i = 0; i < pending.length; i += 40) {
+    chunks.push(pending.slice(i, i + 40));
+  }
+
+  return serial(chunks, function (chunk) {
+    var q = 'doi:(' + chunk.map(function (d) {
+      return '"' + d + '"';
+    }).join(' OR ') + ')';
+    return get(ZENODO_Q + '?all_versions=true&size=' + chunk.length +
+               '&q=' + encodeURIComponent(q)).then(function (d) {
+      (((d.hits || {}).hits) || []).forEach(function (rec) {
+        var doi = String(rec.doi || '').toLowerCase();
+        if (!doi) { return; }
+        STATE.concepts[doi] = String(rec.conceptdoi || doi).toLowerCase();
+        /* The search returns the whole record, not a stub - checked against
+           the single-record endpoint on a deposit with four related
+           identifiers, which came back with all four. So the three later
+           checks that want this record already have it. */
+        if (rec.id != null) { records[String(rec.id)] = rec; }
+      });
+    }).catch(function (err) {
+      console.error('resolveConcepts:', err);
+    });
+  }).then(function () {
+    var missed = pending.filter(function (d) { return !STATE.concepts[d]; });
+    return serial(missed, function (d) { return conceptOf(d); });
+  });
+}
+
+function serial(items, fn) {
+  var out = [], i = 0;
+  function next() {
+    if (i >= items.length) { return Promise.resolve(out); }
+    var item = items[i++];
+    return Promise.resolve(fn(item, i - 1)).then(function (r) {
+      out.push(r);
+      return next();
+    });
+  }
+  return next();
+}
+
+/* ── shared loads ───────────────────────────────────────── */
+
+function loadPerson() {
+  return get(ORCID_PERSON.replace('{id}', STATE.orcid)).then(function (p) {
+    var n = (p && p.name) || null;
+    if (!n) { return null; }
+    var g = (n['given-names'] && n['given-names'].value) || '';
+    var f = (n['family-name'] && n['family-name'].value) || '';
+    STATE.name = ((g + ' ' + f).trim()) || null;
+    return STATE.name;
+  }).catch(function (err) { console.error('loadPerson:', err); return null; });
+}
+
+function loadWorks() {
+  return get(ORCID_WORKS.replace('{id}', STATE.orcid)).then(function (doc) {
+    var out = [];
+    (doc.group || []).forEach(function (g) {
+      var s = (g['work-summary'] || [])[0];
+      if (!s) { return; }
+      var doi = null;
+      ((g['external-ids'] && g['external-ids']['external-id']) || [])
+        .forEach(function (x) {
+          if (!doi && String(x['external-id-type'] || '').toLowerCase() === 'doi') {
+            doi = String(x['external-id-value'] || '').toLowerCase();
+          }
+        });
+      var title = '';
+      try { title = s.title.title.value; } catch (e) { title = ''; }
+      var year = null;
+      try { year = s['publication-date'].year.value; } catch (e) { year = null; }
+      out.push({ title: String(title || '').trim(), doi: doi, date: year,
+                 type: String(s.type || '').toLowerCase() });
+    });
+    STATE.works = out;
+    return out;
+  });
+}
+
+function loadAlex() {
+  var byDoi = {}, cursor = '*', total = 0, noDoi = 0;
+  function page() {
+    if (!cursor) { return Promise.resolve(); }
+    var url = OA_WORKS + '?filter=author.orcid:' + encodeURIComponent(STATE.orcid) +
+              '&per-page=200&cursor=' + encodeURIComponent(cursor);
+    return oa(url).then(function (d) {
+      total = (d.meta && d.meta.count) || total;
+      var rows = d.results || [];
+      if (!rows.length) { cursor = null; return; }
+      rows.forEach(function (w) {
+        var doi = String(w.doi || '').toLowerCase();
+        if (doi.indexOf('https://doi.org/') === 0) { doi = doi.slice(16); }
+        if (!doi) { noDoi++; return; }
+        byDoi[doi] = w;
+      });
+      cursor = (d.meta && d.meta.next_cursor) || null;
+      return page();
+    });
+  }
+  return page().then(function () {
+    STATE.alex = { byDoi: byDoi, total: total, noDoi: noDoi };
+    return STATE.alex;
+  });
+}
+
+/* ── the nine checks ────────────────────────────────────── */
+
+var RUN = {};
+
+RUN.identity = function () {
+  var name = STATE.name;
+  if (!name) {
+    return Promise.resolve({ says: 'This ORCID publishes no name, so no ' +
+      'search for others under it is possible.', tiles: [] });
+  }
+  return oa(OA_AUTHORS + '?filter=display_name.search:' +
+             encodeURIComponent(name) + '&per-page=50').then(function (d) {
+    var total = (d.meta && d.meta.count) || 0;
+    var mine = [], anon = [], other = [];
+    (d.results || []).forEach(function (a) {
+      var theirs = String(a.orcid || '').replace(/\/$/, '').split('/').pop();
+      var row = { id: String(a.id || '').split('/').pop(),
+                  works: a.works_count || 0, cited: a.cited_by_count || 0,
+                  field: ((a.topics || [])[0] || {}).display_name || '' };
+      if (theirs === STATE.orcid) { mine.push(row); }
+      else if (!theirs) { anon.push(row); }
+      else { row.orcid = theirs; other.push(row); }
+    });
+    var anonWorks = anon.reduce(function (a, r) { return a + r.works; }, 0);
+    var detail = [];
+    if (mine.length > 1) {
+      detail.push('<b>This ORCID is split across ' + mine.length +
+        ' author records in OpenAlex.</b> Anything reporting a per-author ' +
+        'total is reporting one fragment: ' + mine.map(function (r) {
+          return '<code>' + esc(r.id) + '</code> (' + r.works + ' works)';
+        }).join(', ') + '.');
+    }
+    if (anon.length) {
+      detail.push(count(anon.length, 'author record') + ' ' +
+        verb(anon.length, 'shares', 'share') + ' this name with no ' +
+        'identifier at all, ' + count(anonWorks, 'work') + ' between them. ' +
+        'Each is either this author unclaimed or somebody else, and an ' +
+        'index matching by name cannot tell.');
+    }
+    if (other.length) {
+      detail.push(other.length + ' different identified ' +
+        (other.length === 1 ? 'person publishes' : 'people publish') +
+        ' under the same name. Anyone assessing a submission by searching ' +
+        'the name sees their work beside this author’s.');
+    }
+    return {
+      tiles: [
+        { n: total, k: 'records share this name' },
+        { n: mine.length, k: 'are this ORCID', tone: mine.length > 1 ? 'warn' : '' },
+        { n: anon.length, k: 'have no identifier', tone: anon.length ? 'warn' : '' },
+        { n: other.length, k: 'are other people' }
+      ],
+      says: total > 1
+        ? 'An ORCID is unique. A name is not, and indexes match on names far '
+          + 'more often than on identifiers.'
+        : 'Nobody else in OpenAlex publishes under this name.',
+      detail: detail
+    };
+  });
+};
+
+/*
+  Above this many index entries the ORCID has stopped being a useful key and
+  the report says so rather than spending several minutes proving it. A test
+  ORCID that many systems attach things to by mistake came back with 1,971
+  works against 6 on the record; resolving a concept DOI for each of those
+  is thousands of requests to establish something the first number already
+  said. The cap is announced in the section, never applied quietly.
+*/
+var COLLAPSE_CAP = 150;
+
+RUN.record = function () {
+  var works = STATE.works, alex = STATE.alex;
+  var withDoi = works.filter(function (w) { return w.doi; });
+  var mine = withDoi.map(function (w) { return w.doi; });
+  var theirs = Object.keys(alex.byDoi);
+
+  /*
+    A Zenodo work has one DOI per version and one concept DOI covering all of
+    them. Comparing raw DOIs between two systems reports every version
+    mismatch as a missing work - an early run of this check made 25
+    duplicates look like 25 works the author had failed to claim, which is a
+    serious accusation assembled out of an identifier convention. Both sides
+    are reduced to concepts before anything is compared.
+  */
+  return resolveConcepts(mine).then(function () {
+    var claimed = {}, direct = {};
+    mine.forEach(function (d) {
+      claimed[STATE.concepts[d] || d] = true;
+      direct[d] = true;
+    });
+
+    var candidates = theirs.filter(function (d) { return !direct[d]; });
+    var tooMany = candidates.length > COLLAPSE_CAP;
+
+    return (tooMany ? Promise.resolve(null)
+                    : resolveConcepts(candidates)).then(function () {
+      var stray, attributed, seen = {};
+
+      if (tooMany) {
+        stray = candidates.length;
+        attributed = mine.filter(function (d) { return alex.byDoi[d]; }).length;
+      } else {
+        stray = 0;
+        candidates.forEach(function (d) {
+          var c = STATE.concepts[d] || d;
+          if (!claimed[c] && !seen[c]) { seen[c] = true; stray++; }
+        });
+        var indexed = {};
+        theirs.forEach(function (d) { indexed[STATE.concepts[d] || d] = true; });
+        attributed = withDoi.filter(function (w) {
+          return indexed[STATE.concepts[w.doi] || w.doi];
+        }).length;
+      }
+
+      var detail = [];
+      if (tooMany) {
+        detail.push('<b>' + stray + ' index entries are attributed to this ' +
+          'ORCID and are not on the record.</b> At that size the identifier ' +
+          'is not being used as an identifier: an ORCID this crowded has ' +
+          'been attached to other people’s work, by them or by an index ' +
+          'matching on something weaker.');
+        detail.push('Separate versions of the same work were not collapsed ' +
+          'here, because doing so for ' + stray + ' entries would take ' +
+          'thousands of requests to refine a number that is already clear.');
+      } else if (stray) {
+        detail.push('OpenAlex attributes ' + stray + ' work' +
+          (stray === 1 ? '' : 's') + ' to this ORCID that the record does ' +
+          'not list, after separate versions of the same work were reduced ' +
+          'to one. Usually these are the author’s and unclaimed; ' +
+          'occasionally they belong to somebody else.');
+      } else {
+        detail.push('Nothing is attributed to this ORCID that the record ' +
+          'does not also list. The gap between ' + alex.total + ' index ' +
+          'entries and ' + works.length + ' works is versions of the same ' +
+          'work, not missing ones.');
+      }
+
+      return {
+        tiles: [
+          { n: works.length, k: verb(works.length, 'work on the record',
+                                  'works on the record') },
+          { n: attributed, k: 'indexed and attributed to this ORCID' },
+          { n: alex.total, k: 'entries OpenAlex files under it' },
+          { n: stray, k: 'attributed but not on the record',
+            tone: stray ? 'warn' : '' }
+        ],
+        says: 'What the author says they published, against what the '
+            + 'literature index files under their identifier. Different '
+            + 'versions of one work are counted once.',
+        detail: detail
+      };
+    });
+  });
+};
+
+RUN.venues = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  var kinds = {}, names = {}, box = new Box();
+  return serial(withDoi, function (w) {
+    return oa(OA_ONE + w.doi).then(function (rec) {
+      var src = ((rec.primary_location || {}).source) || {};
+      var kind = src.type || 'unknown';
+      kinds[kind] = (kinds[kind] || 0) + 1;
+      if (src.display_name) {
+        names[src.display_name] = (names[src.display_name] || 0) + 1;
+      }
+    }).catch(function (err) { box.note(err); });
+  }).then(function () {
+    var tiles = Object.keys(kinds).sort(function (a, b) {
+      return kinds[b] - kinds[a];
+    }).map(function (k) { return { n: kinds[k], k: k }; });
+    if (box.missing) { tiles.push({ n: box.missing, k: 'not indexed' }); }
+    if (box.busy) {
+      tiles.push({ n: box.busy, k: 'could not be looked up', tone: 'warn' });
+    }
+    var top = Object.keys(names).sort(function (a, b) {
+      return names[b] - names[a];
+    }).slice(0, 6).map(function (n) {
+      return esc(n) + ' &mdash; ' + names[n] + ' work' + (names[n] === 1 ? '' : 's');
+    });
+    var says;
+    if (kinds.repository && !kinds.journal) {
+      says = 'Every indexed work is a repository deposit. None appeared in a '
+           + 'journal, so none went through peer review at a venue. That is a '
+           + 'legitimate way to publish and it is not the same thing.';
+    } else if (kinds.journal && kinds.repository) {
+      says = kinds.journal + ' in journals, ' + kinds.repository +
+             ' deposited to repositories.';
+    } else {
+      says = 'Where each work actually appeared.';
+    }
+    return { tiles: tiles, says: says, detail: top };
+  });
+};
+
+RUN.citations = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  var own = {};
+  withDoi.forEach(function (w) {
+    own[w.doi] = true;
+    var c = STATE.concepts[w.doi];
+    if (c) { own[c] = true; }
+  });
+  var external = 0, mine = 0, cited = 0, box = new Box(), titles = [];
+  return serial(withDoi, function (w) {
+    /*
+      Every work is looked up by its DOI, not only the ones OpenAlex files
+      under this ORCID. Restricting to the attributed set means the works
+      whose attribution the index lost contribute no citations at all, and
+      those are exactly the works most likely to be miscounted elsewhere.
+    */
+    var rec = STATE.alex.byDoi[w.doi];
+    return (rec ? Promise.resolve(rec)
+                : oa(OA_ONE + w.doi).catch(function (err) {
+                    if (err.busy) { box.note(err); }
+                    return null;
+                  }))
+      .then(function (r) {
+        var id = r && String(r.id || '').split('/').pop();
+        if (!id) { return null; }
+        return oa(OA_WORKS + '?filter=cites:' + id + '&per-page=200')
+          .then(function (d) {
+            var rows = d.results || [];
+            if (!rows.length) { return null; }
+            cited++;
+            /*
+              Whether a citation is the author's own is decided by the work,
+              not by the ORCID on the citing record. An index that dropped
+              this author's identifier makes their own paper look like a
+              stranger's, and that promotes a self-citation into evidence
+              that somebody else read it - the single most flattering error
+              this tool could make.
+            */
+            return serial(rows, function (c) {
+              var cd = String(c.doi || '').toLowerCase();
+              if (cd.indexOf('https://doi.org/') === 0) { cd = cd.slice(16); }
+              if (own[cd]) { mine++; return null; }
+              return conceptOf(cd).then(function (cc) {
+                if (own[cc]) { mine++; return; }
+                external++;
+                if (titles.length < 5) { titles.push(c.title || cd); }
+              });
+            });
+          }).catch(function (err) { box.note(err); return null; });
+      });
+  }).then(function () {
+    var total = external + mine;
+    var detail = titles.map(function (t) { return esc(t); });
+    if (box.busy) {
+      detail.push('<b>' + box.busy + ' lookup' + (box.busy === 1 ? '' : 's') +
+        ' were rate limited and could not be completed.</b> The count above ' +
+        'is a floor, not a total.');
+    }
+    return {
+      tiles: [
+        { n: total, k: 'citations recorded' },
+        { n: external, k: 'from other authors', tone: external ? 'ok' : '' },
+        { n: mine, k: 'from this author’s own work' },
+        { n: cited, k: 'works have been cited' }
+      ],
+      says: total
+        ? 'A citation count is one number covering two different things. '
+          + 'Only citations from other people evidence that somebody else '
+          + 'read the work; citing your own prior work is normal and is '
+          + 'counted separately, not judged.'
+        : 'Nothing cites this record yet.',
+      detail: detail
+    };
+  });
+};
+
+RUN.timing = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  /*
+    This measures the trip from a repository deposit to a literature index.
+    An author who has never deposited anything has not failed it - there was
+    no trip. Reporting a column of zeros in that case states a finding the
+    check never made.
+  */
+  var deposits = withDoi.filter(function (w) { return zenodoId(w.doi); });
+  if (!deposits.length) {
+    return Promise.resolve({
+      tiles: [],
+      says: 'Nothing on this record is a repository deposit, so there is no '
+          + 'deposit-to-index journey to measure. This section reports on '
+          + 'works deposited to Zenodo.',
+      detail: []
+    });
+  }
+  var lags = [], never = 0, prematched = 0, kept = 0, lost = 0;
+  var box = new Box(), gone = [];
+  return serial(withDoi, function (w) {
+    var id = zenodoId(w.doi);
+    if (!id) { return null; }
+    return zenodoRecord(id).then(function (rec) {
+      var md = rec.metadata || {};
+      var dep = String(md.publication_date || '');
+      var hasOrcid = (md.creators || []).some(function (c) { return c.orcid; });
+      var known = STATE.alex.byDoi[w.doi];
+      return (known ? Promise.resolve(known)
+                    : oa(OA_ONE + w.doi).catch(function (err) {
+                        if (err.busy) { box.note(err); }
+                        return null;
+                      }))
+      .then(function (rec2) {
+        if (!rec2 || !rec2.created_date) { never++; return; }
+        var a = new Date(dep), b = new Date(String(rec2.created_date).slice(0, 10));
+        var days = Math.round((b - a) / 86400000);
+        if (days < 0) { prematched++; } else { lags.push(days); }
+        if (hasOrcid) {
+          var has = (rec2.authorships || []).some(function (x) {
+            return (x.author || {}).orcid;
+          });
+          if (has) { kept++; } else { lost++; }
+        }
+      });
+    }).catch(function (err) {
+      /*
+        A deposit this could not read is not a deposit nobody indexed, and
+        it is not nothing either. One work on the record this was written
+        against returns 410 Gone - withdrawn from the repository and still
+        listed on the public profile. Counting it as "not indexed" hides
+        that; dropping it hides it better. It gets its own line.
+      */
+      if (err && err.busy) { box.note(err); }
+      else if (/^410 /.test(err.message || '')) { gone.push(w.doi); }
+      else { never++; }
+    });
+  }).then(function () {
+    lags.sort(function (a, b) { return a - b; });
+    var median = lags.length ? lags[Math.floor(lags.length / 2)] : null;
+    var detail = [];
+    if (prematched) {
+      detail.push(prematched + ' work' + (prematched === 1 ? ' was' : 's were') +
+        ' matched to an index record created before the deposit — an earlier ' +
+        'version of the same work. That is not an ingestion time and is ' +
+        'counted separately rather than averaged in.');
+    }
+    if (lost) {
+      detail.push('<b>' + lost + ' work' + (lost === 1 ? '' : 's') +
+        ' lost the ORCID in transit.</b> The deposit carried the identifier ' +
+        'and the index record does not, so those works no longer connect to ' +
+        'this author automatically.');
+    }
+    gone.forEach(function (doi) {
+      detail.push('<b>' + esc(doi) + ' is on the record, but the deposit no ' +
+        'longer exists.</b> The repository returns 410 Gone: it was ' +
+        'withdrawn and the profile still points at it. Anybody following ' +
+        'that identifier arrives nowhere.');
+    });
+    if (never && median !== null) {
+      detail.push(never + ' work' + (never === 1 ? ' has' : 's have') +
+        ' not been indexed at all. Where the typical wait is ' + median +
+        ' day' + (median === 1 ? '' : 's') + ', that is a different ' +
+        'population rather than a longer wait.');
+    }
+    var tiles = [
+      { n: median === null ? '—' : median,
+        k: 'days, typical, to reach the index' },
+      { n: lags.length, k: 'works measured' },
+      { n: never, k: 'never indexed', tone: never ? 'warn' : '' },
+      { n: gone.length, k: verb(gone.length, 'deposit no longer exists',
+                           'deposits no longer exist'),
+        tone: gone.length ? 'bad' : '' },
+      { n: lost, k: 'lost their ORCID on the way', tone: lost ? 'warn' : '' }
+    ];
+    if (box.busy) {
+      tiles.push({ n: box.busy, k: 'could not be checked',
+                   tone: 'warn' });
+    }
+    return {
+      tiles: tiles,
+      says: 'A repository reports deposits and an index reports holdings. '
+          + 'Nobody reports the gap between them, and the gap is where '
+          + 'attribution goes.',
+      detail: detail
+    };
+  });
+};
+
+/* Does Wikidata hold an item for any of these identifiers? */
+function wdItemFor(dois) {
+  var i = 0;
+  function next() {
+    if (i >= dois.length) { return Promise.resolve(null); }
+    var doi = dois[i++];
+    return get(WD_API + '?action=query&list=search&srsearch=' +
+               encodeURIComponent('haswbstatement:P356=' + doi) +
+               '&srlimit=1&format=json&origin=*').then(function (d) {
+      var hits = ((d.query || {}).search) || [];
+      return hits.length ? hits[0].title : next();
+    });
+  }
+  return next();
+}
+
+RUN.graph = function () {
+  return get(WD_API + '?action=query&list=search&srsearch=' +
+             encodeURIComponent('haswbstatement:P496=' + STATE.orcid) +
+             '&srlimit=1&format=json&origin=*').then(function (d) {
+    var hits = ((d.query || {}).search) || [];
+    if (!hits.length) {
+      return { tiles: [{ n: 0, k: 'author item on Wikidata' }],
+               says: 'No Wikidata item carries this ORCID, so the works '
+                   + 'cannot be connected to the author there at all.',
+               detail: [] };
+    }
+    var qid = hits[0].title;
+    var q = 'SELECT ?w ?doi WHERE { ?w wdt:P50 wd:' + qid +
+            ' . OPTIONAL { ?w wdt:P356 ?doi } } LIMIT 2000';
+    return get(WD_SPARQL + '?format=json&query=' + encodeURIComponent(q),
+               'application/sparql-results+json').then(function (r) {
+      var named = {};
+      (((r.results || {}).bindings) || []).forEach(function (b) {
+        var doi = ((b.doi || {}).value || '').toLowerCase();
+        if (doi) { named[STATE.concepts[doi] || doi] = true; }
+      });
+      var withDoi = STATE.works.filter(function (w) { return w.doi; });
+      var matched = 0, unattributed = 0, none = 0, box = new Box();
+      return serial(withDoi, function (w) {
+        var c = STATE.concepts[w.doi] || w.doi;
+        if (named[c]) { matched++; return null; }
+        /*
+          An item may carry the concept DOI or any version DOI, and
+          Wikidata stores them uppercased. Asking about one form only and
+          concluding "no item" reports a question that was wrong as a fact
+          about the record. Every form the work is known by is tried before
+          anything is concluded.
+        */
+        var forms = {};
+        forms[w.doi.toUpperCase()] = true;
+        forms[String(c).toUpperCase()] = true;
+        return wdItemFor(Object.keys(forms)).then(function (hit) {
+          if (hit) { unattributed++; } else { none++; }
+        }).catch(function (err) {
+          if (err && err.busy) { box.note(err); } else { none++; }
+        });
+      }).then(function () {
+        var detail = [];
+        if (unattributed) {
+          detail.push('<b>' + unattributed + ' work' +
+            (unattributed === 1 ? ' has' : 's have') + ' an item that does ' +
+            'not name the author.</b> An author page built from Wikidata ' +
+            'shows ' + matched + ' work' + (matched === 1 ? '' : 's') +
+            ', not ' + (matched + unattributed) + '.');
+        }
+        var tiles = [
+          { n: matched, k: 'items name the author' },
+          { n: unattributed, k: 'items exist but do not',
+            tone: unattributed ? 'warn' : '' },
+          { n: none, k: 'have no item' },
+          { n: qid, k: 'author item' }
+        ];
+        if (box.busy) {
+          tiles.push({ n: box.busy, k: 'could not be checked',
+                       tone: 'warn' });
+        }
+        return {
+          tiles: tiles,
+          says: 'An item existing for a work is not the same as the ' +
+                'knowledge graph knowing whose work it is.',
+          detail: detail
+        };
+      });
+    });
+  });
+};
+
+/*
+  The deposit checks, in the order a reader would want to hear them.
+
+  These are the same nine the command line tool applies, ported rather than
+  approximated: a shorter list here would report a cleaner record than the
+  same deposits get elsewhere, and two tools of the same name disagreeing
+  about the same deposit is worse than either being strict or lenient.
+
+  FAIL is something that will need a correction. WARN is something that
+  costs reach and can still be fixed in the next version.
+*/
+var LABEL_MAX = 245;
+var MAPPABLE = {
+  'publication/preprint': 1, 'publication/article': 1,
+  'publication/report': 1, 'publication/workingpaper': 1,
+  'publication/book': 1, 'publication/section': 1,
+  'publication/conferencepaper': 1, 'publication/technicalnote': 1,
+  'publication/other': 1, 'software': 1, 'dataset': 1,
+  'poster': 1, 'presentation': 1
+};
+
+function lint(md) {
+  var fail = [], warn = [];
+
+  var creators = md.creators || [];
+  if (!creators.length) {
+    fail.push('no creators at all');
+  } else if (creators.some(function (c) { return !c.orcid; })) {
+    fail.push('a creator with no ORCID, so attribution rests on a name');
+  }
+
+  var rt = md.resource_type || {};
+  var upload = String(rt.type || md.upload_type || '').toLowerCase();
+  var sub = String(rt.subtype || md.publication_type || '').toLowerCase();
+  var key = upload + (sub ? '/' + sub : '');
+  if (!upload) {
+    fail.push('no resource type');
+  } else if (!MAPPABLE[key] && !MAPPABLE[upload]) {
+    fail.push('a type nothing downstream can express');
+  }
+
+  var title = String(md.title || '').trim();
+  if (!title) {
+    fail.push('no title');
+  } else if (title.length > LABEL_MAX) {
+    warn.push('a title over ' + LABEL_MAX + ' characters, which the '
+              + 'knowledge graph will truncate');
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(md.publication_date || ''))) {
+    fail.push('no full publication date');
+  }
+
+  var lic = md.license;
+  var licId = (lic && typeof lic === 'object') ? lic.id : lic;
+  if (!licId) {
+    fail.push('no licence, so nobody may legally reuse it');
+  }
+
+  var kinds = {};
+  (md.related_identifiers || []).forEach(function (r) {
+    kinds[String(r.relation || '').toLowerCase()] = true;
+  });
+  if (upload === 'software' && !(kinds.issupplementto || kinds.isdescribedby
+      || kinds.isreferencedby || kinds.iscitedby)) {
+    warn.push('software with no link to the paper describing it');
+  } else if (upload === 'publication' && !(kinds.issupplementedby
+      || kinds.references || kinds.cites || kinds.isderivedfrom)) {
+    warn.push('a publication with no link to its code, data or sources');
+  }
+
+  if (!(md.keywords || []).length) {
+    warn.push('no keywords, so subject search will not find it');
+  }
+
+  var desc = String(md.description || '').replace(/<[^>]+>/g, '').trim();
+  if (desc.length < 120) {
+    warn.push('a description shorter than a paragraph');
+  }
+
+  if (!md.language) { warn.push('no language set'); }
+
+  return { fail: fail, warn: warn };
+}
+
+RUN.integrity = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  var deposits = withDoi.filter(function (w) { return zenodoId(w.doi); });
+  if (!deposits.length) {
+    return Promise.resolve({
+      tiles: [],
+      says: 'There are no repository deposits on this record, so there is '
+          + 'no deposit metadata to check. This section reports on works '
+          + 'deposited to Zenodo.',
+      detail: []
+    });
+  }
+  var clean = 0, warn = 0, fail = 0, reasons = {}, box = new Box();
+  return serial(withDoi, function (w) {
+    var id = zenodoId(w.doi);
+    if (!id) { return null; }
+    return zenodoRecord(id).then(function (rec) {
+      var found = lint(rec.metadata || {});
+      found.fail.concat(found.warn).forEach(function (r) {
+        reasons[r] = (reasons[r] || 0) + 1;
+      });
+      if (found.fail.length) { fail++; }
+      else if (found.warn.length) { warn++; }
+      else { clean++; }
+    }).catch(function (err) { box.note(err); });
+  }).then(function () {
+    var top = Object.keys(reasons).sort(function (a, b) {
+      return reasons[b] - reasons[a];
+    }).slice(0, 5).map(function (r) {
+      return reasons[r] + ' × ' + esc(r);
+    });
+    var tiles = [
+      { n: clean, k: 'deposits pass every check', tone: 'ok' },
+      { n: warn, k: 'carry a warning', tone: warn ? 'warn' : '' },
+      { n: fail, k: 'will cause a correction', tone: fail ? 'bad' : '' }
+    ];
+    /* A record that would not load has no metadata to judge. It is neither
+       clean nor failing, and leaving it out of all three counts silently
+       shrinks the total the reader is comparing against. */
+    var unread = box.busy + box.missing;
+    if (unread) {
+      tiles.push({ n: unread, k: 'could not be read at all', tone: 'warn' });
+    }
+    return {
+      tiles: tiles,
+      says: 'A DOI is permanent. Correcting a published record means a new '
+          + 'version and every index re-reading it, so these are the faults '
+          + 'worth catching before deposit.',
+      detail: top
+    };
+  });
+};
+
+/*
+  The same comparison the command line tool makes, implemented here rather
+  than approximated, so the two cannot reach different verdicts about the
+  same pair of abstracts. Checked against it: two abstracts it scores 0.2894
+  and 0.9809 score 0.2894 and 0.9809 here.
+*/
+var DIVERGENT = 0.98;
+
+function unescapeHtml(text) {
+  var box = document.createElement('textarea');
+  box.innerHTML = text;
+  return box.value;
+}
+
+/* Strip what differs harmlessly between copies, keep what carries meaning:
+   entities and tags, because a repository stores rich text and an index
+   stores plain; ligatures and smart punctuation, because a PDF extractor
+   makes them and a form field does not; line wrapping, because it is not a
+   difference in what was said. */
+function normalise(text) {
+  if (!text) { return ''; }
+  var t = unescapeHtml(String(text));
+  t = t.replace(/<[^>]+>/g, ' ');
+  t = t.normalize('NFKD');
+  t = t.replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
+       .replace(/[\u2013\u2014]/g, '-').replace(/\u00a0/g, ' ');
+  t = t.replace(/-\s*\n\s*/g, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
+
+/* Compared with every space removed. Collapsing runs is not enough: one copy
+   writes "m <= 1" and the other "m<=1", and a long abstract full of notation
+   scores badly on nothing but that. Differences are still shown with their
+   spaces, because a person has to read them. */
+function skeleton(text) { return text.replace(/\s+/g, ''); }
+
+function longestMatch(a, b, b2j, alo, ahi, blo, bhi) {
+  var besti = alo, bestj = blo, best = 0, j2len = {}, i, j, k, next, spots, x;
+  for (i = alo; i < ahi; i++) {
+    next = {};
+    spots = b2j[a[i]] || [];
+    for (x = 0; x < spots.length; x++) {
+      j = spots[x];
+      if (j < blo) { continue; }
+      if (j >= bhi) { break; }
+      k = next[j] = (j2len[j - 1] || 0) + 1;
+      if (k > best) { besti = i - k + 1; bestj = j - k + 1; best = k; }
+    }
+    j2len = next;
+  }
+  return [besti, bestj, best];
+}
+
+function similarity(a, b) {
+  if (!a.length && !b.length) { return 1; }
+  if (!a.length || !b.length) { return 0; }
+  var b2j = {}, i;
+  for (i = 0; i < b.length; i++) {
+    (b2j[b[i]] = b2j[b[i]] || []).push(i);
+  }
+  var queue = [[0, a.length, 0, b.length]], matched = 0;
+  while (queue.length) {
+    var q = queue.pop();
+    var m = longestMatch(a, b, b2j, q[0], q[1], q[2], q[3]);
+    if (!m[2]) { continue; }
+    matched += m[2];
+    if (q[0] < m[0] && q[2] < m[1]) { queue.push([q[0], m[0], q[2], m[1]]); }
+    if (m[0] + m[2] < q[1] && m[1] + m[2] < q[3]) {
+      queue.push([m[0] + m[2], q[1], m[1] + m[2], q[3]]);
+    }
+  }
+  return 2 * matched / (a.length + b.length);
+}
+
+function abstractFrom(work) {
+  var inv = work && work.abstract_inverted_index;
+  if (!inv) { return null; }
+  var pos = {};
+  Object.keys(inv).forEach(function (term) {
+    inv[term].forEach(function (i) { pos[i] = term; });
+  });
+  var order = Object.keys(pos).sort(function (x, y) { return x - y; });
+  return order.length ? order.map(function (i) { return pos[i]; }).join(' ')
+                      : null;
+}
+
+RUN.abstracts = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  var deposits = withDoi.filter(function (w) { return zenodoId(w.doi); });
+  if (!deposits.length) {
+    return Promise.resolve({
+      tiles: [],
+      says: 'An abstract can only be compared where the same work carries '
+          + 'one in two places. Nothing on this record is a repository '
+          + 'deposit, so there is no second copy to compare against.',
+      detail: []
+    });
+  }
+  var compared = 0, diverged = 0, examples = [], box = new Box();
+  return serial(withDoi, function (w) {
+    var id = zenodoId(w.doi);
+    if (!id) { return null; }
+    return zenodoRecord(id).then(function (rec) {
+      var deposited = (rec.metadata || {}).description || '';
+      if (!deposited) { return null; }
+      /*
+        Every work, not only the ones the index attributes to this ORCID.
+        The one abstract on this record that genuinely disagrees belongs to
+        a work OpenAlex files under nobody, so restricting the comparison to
+        the attributed set hid the single finding the check exists for.
+      */
+      var known = STATE.alex.byDoi[w.doi];
+      return (known ? Promise.resolve(known)
+                    : oa(OA_ONE + w.doi).catch(function () { return null; }))
+        .then(function (indexed) {
+          var theirs = abstractFrom(indexed);
+          if (!theirs) { return; }
+          compared++;
+          var ratio = similarity(skeleton(normalise(theirs)),
+                                 skeleton(normalise(deposited)));
+          if (ratio < DIVERGENT) {
+            diverged++;
+            if (examples.length < 4) {
+              examples.push(esc(w.title || w.doi) + ' &mdash; ' +
+                            Math.round(ratio * 100) + '% alike');
+            }
+          }
+        });
+    }).catch(function (err) { box.note(err); });
+  }).then(function () {
+    var tiles = [
+      { n: compared, k: verb(compared, 'abstract exists in two places',
+                        'abstracts exist in two places') },
+      { n: diverged, k: 'copies disagree', tone: diverged ? 'warn' : '' }
+    ];
+    if (box.busy) {
+      tiles.push({ n: box.busy, k: 'could not be checked', tone: 'warn' });
+    }
+    return {
+      tiles: tiles,
+      says: 'The abstract is the part most people read, and it exists in '
+          + 'several copies made at different times. Spacing, punctuation '
+          + 'and markup are ignored; what is left is a difference in what '
+          + 'the two copies say.',
+      detail: examples
+    };
+  });
+};
+
+RUN.retract = function () {
+  var withDoi = STATE.works.filter(function (w) { return w.doi; });
+  var authored = 0, unchecked = 0, box = new Box();
+  return serial(withDoi, function (w) {
+    var known = STATE.alex.byDoi[w.doi];
+    if (known) {
+      if (known.is_retracted) { authored++; }
+      return null;
+    }
+    return oa(OA_ONE + w.doi).then(function (r) {
+      if (r.is_retracted) { authored++; }
+    }).catch(function (err) { box.note(err); unchecked++; });
+  }).then(function () {
+    return {
+      tiles: [
+        { n: authored, k: verb(authored, 'retracted work on the record',
+                        'retracted works on the record'),
+          tone: authored ? 'bad' : 'ok' },
+        { n: unchecked, k: 'not in the index to check',
+          tone: unchecked ? 'warn' : '' }
+      ],
+      says: authored
+        ? 'A retraction on the record needs explaining before anything else '
+          + 'here matters.'
+        : 'Nothing on this record is recorded as retracted. That covers what '
+          + 'was checkable: a retraction the index has not ingested would not '
+          + 'appear here.',
+      detail: []
+    };
+  });
+};
+
+/* ── running ────────────────────────────────────────────── */
+
+function setStep(id, cls, ms) {
+  var node = el('step-' + id);
+  if (!node) { return; }
+  node.className = 'step ' + cls;
+  var t = node.querySelector('.t');
+  if (t && ms != null) { t.textContent = (ms / 1000).toFixed(1) + 's'; }
+}
+
+function buildSteps() {
+  el('steps').innerHTML = CHECKS.map(function (c) {
+    return '<div class="step" id="step-' + c.id + '">' +
+           '<span class="dot"></span>' + esc(c.label) +
+           '<span class="t"></span></div>';
+  }).join('');
+  el('steps').classList.add('on');
+}
+
+function renderBlock(check, result) {
+  var h = ['<section class="block"><h3>' + esc(check.label) + '</h3>'];
+  if (result.error) {
+    h.push('<p class="sectionerr">This check could not run: ' +
+           esc(result.error) + '. Nothing is implied by its absence.</p>');
+    h.push('</section>');
+    return h.join('');
+  }
+  if (result.tiles && result.tiles.length) {
+    h.push('<div class="tiles">');
+    result.tiles.forEach(function (t) {
+      h.push('<div class="tile ' + (t.tone || '') + '"><div class="n">' +
+             esc(t.n) + '</div><div class="k">' + esc(t.k) + '</div></div>');
+    });
+    h.push('</div>');
+  }
+  if (result.says) { h.push('<p class="says">' + result.says + '</p>'); }
+  if (result.detail && result.detail.length) {
+    h.push('<ul class="detail">');
+    result.detail.forEach(function (d) { h.push('<li>' + d + '</li>'); });
+    h.push('</ul>');
+  }
+  h.push('</section>');
   return h.join('');
 }
 
-function download(doc) {
-  try {
-    if (STATE.blobUrl) { URL.revokeObjectURL(STATE.blobUrl); }
-    var blob = new Blob([JSON.stringify(doc, null, 1) + '\n'],
-                        { type: 'application/json' });
-    STATE.blobUrl = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = STATE.blobUrl;
-    a.download = 'works-' + doc.author.orcid + '.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } catch (err) {
-    console.error('download:', err);
-    say('The browser refused the download.');
-  }
-}
-
-/* ── the run ───────────────────────────────────────────────── */
-
 function run(raw) {
-  // READS: STATE.running   WRITES: STATE.running, STATE.doc
   if (STATE.running) { return; }
-  var parsed = normaliseOrcid(raw);
-  el('report').classList.add('hide');
+  var parsed = readOrcid(raw);
+  el('err').style.display = 'none';
+  el('doc').classList.remove('on');
   if (parsed.error) {
-    say(parsed.error);
-    el('progress').className = 'progress bad';
+    el('err').textContent = parsed.error;
+    el('err').style.display = 'block';
     return;
   }
-  el('progress').className = 'progress';
+
   STATE.running = true;
+  STATE.orcid = parsed.orcid;
+  STATE.works = [];
+  STATE.alex = {};
+  STATE.concepts = {};
   el('go').disabled = true;
+  el('demo').disabled = true;
+  buildSteps();
 
-  var orcid = parsed.orcid;
-  var name = null, orcidWorks = null;
+  loadPerson()
+    .then(loadWorks)
+    .then(loadAlex)
+    .then(function () {
+      el('who').textContent = STATE.name || STATE.orcid;
+      el('meta').textContent = STATE.orcid + '  ·  checked ' +
+        new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+      el('blocks').innerHTML = '';
+      el('doc').classList.add('on');
 
-  say('Asking ORCID what ' + orcid + ' claims…');
-  authorName(orcid).then(function (n) {
-    name = n;
-    return fromOrcid(orcid);
-  }).then(function (w) {
-    orcidWorks = w;
-    say(w.length + ' works on the ORCID record. Asking OpenAlex what it indexes…');
-    return fromOpenAlex(orcid, function (read, total) {
-      say('OpenAlex: read ' + read + ' of ' + total + '…');
-    });
-  }).then(function (alex) {
-    STATE.alex = alex;
-    var everyDoi = orcidWorks.map(function (w) { return w.doi; })
-      .filter(Boolean).concat(Object.keys(alex.byDoi));
-    say('Resolving Zenodo versions to their concept…');
-    return resolveAll(everyDoi, function (done, total) {
-      say('Resolving Zenodo versions to their concept… ' + done + ' of ' + total);
-    });
-  }).then(function (concepts) {
-    var alex = STATE.alex;
-    var works = [], seen = {}, claimed = {}, merged = 0;
-
-    orcidWorks.forEach(function (w) {
-      if (w.doi) { claimed[concepts[w.doi] || w.doi] = true; }
-    });
-
-    orcidWorks.forEach(function (w) {
-      var c = w.doi ? (concepts[w.doi] || w.doi) : null;
-      if (c && seen[c]) { return; }
-      if (c) { seen[c] = true; }
-      var extra = (w.doi && alex.byDoi[w.doi]) || null;
-      works.push({
-        title: w.title, doi: w.doi, date: w.date,
-        type: w.type || (extra && extra.type) || null,
-        openalex: extra ? extra.openalex : null,
-        cited_by: extra ? extra.cited_by : null,
-        open_access: extra ? extra.open_access : null,
-        in_openalex: !!extra
+      return serial(CHECKS, function (check) {
+        var started = Date.now();
+        setStep(check.id, 'run');
+        return Promise.resolve()
+          .then(function () { return RUN[check.id](); })
+          .catch(function (err) {
+            console.error(check.id + ':', err);
+            return { error: err.message };
+          })
+          .then(function (result) {
+            setStep(check.id, result.error ? 'fail' : 'done',
+                    Date.now() - started);
+            el('blocks').insertAdjacentHTML('beforeend',
+                                            renderBlock(check, result));
+          });
       });
+    })
+    .catch(function (err) {
+      console.error('run:', err);
+      el('err').textContent = 'That did not finish: ' + err.message +
+        '. The public APIs rate limit, so waiting a moment usually helps.';
+      el('err').style.display = 'block';
+    })
+    .then(function () {
+      STATE.running = false;
+      el('go').disabled = false;
+      el('demo').disabled = false;
     });
-    Object.keys(alex.byDoi).forEach(function (doi) {
-      var c = concepts[doi] || doi;
-      if (claimed[c] || seen[c]) { merged++; return; }
-      seen[c] = true;
-      var extra = alex.byDoi[doi];
-      works.push({
-        title: null, doi: doi, concept_doi: c, date: null, type: extra.type,
-        openalex: extra.openalex, cited_by: extra.cited_by,
-        open_access: extra.open_access, in_openalex: true, unclaimed: true
-      });
-    });
-
-    STATE.doc = {
-      author: { name: name, orcid: orcid },
-      source: 'public',
-      openalex_total: alex.total,
-      openalex_with_doi: Object.keys(alex.byDoi).length,
-      openalex_without_doi: alex.noDoi,
-      paged_to_end: alex.pagedToEnd,
-      merged_versions: merged,
-      works: works
-    };
-    say('');
-    render(STATE.doc);
-  }).catch(function (err) {
-    console.error('run:', err);
-    el('progress').className = 'progress bad';
-    say('That did not finish: ' + err.message +
-        '. The public APIs rate limit, so waiting a moment usually fixes it.');
-  }).then(function () {
-    STATE.running = false;
-    el('go').disabled = false;
-  });
 }
 
 function wire() {
@@ -624,7 +1411,7 @@ function wire() {
   el('orcid').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { run(el('orcid').value); }
   });
-  el('mine').onclick = function () {
+  el('demo').onclick = function () {
     el('orcid').value = '0009-0005-3640-014X';
     run(el('orcid').value);
   };
