@@ -112,6 +112,7 @@ button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim)}
 .s-divergent{background:rgba(255,107,107,.13);color:var(--bad)}
 .s-unlocatable{background:rgba(255,107,107,.13);color:var(--bad)}
 .s-script{background:rgba(255,200,87,.13);color:var(--warn)}
+.s-archival{background:rgba(150,160,186,.14);color:var(--dim)}
 .s-retracted{background:rgba(255,107,107,.2);color:var(--bad)}
 .s-unchecked{background:rgba(150,160,186,.12);color:var(--dim)}
 .found{margin-top:10px;font-size:14.5px;color:var(--ink);
@@ -337,6 +338,26 @@ function splitRefs(text) {
 }
 
 /* ── identifiers a reference may already carry ──────────── */
+
+/*
+  Is this a document in an archive rather than a published work?
+
+  An archival citation names a repository and a shelfmark. Nothing about it
+  is in a literature index, so a search returns whatever is nearest - a
+  citation of a box in the National Archives matched a published finding aid
+  about that collection, at a perfect score.
+
+  Both signals are required. "Archives" alone appears in plenty of journal
+  names, and a shelfmark pattern alone catches volume numbers.
+*/
+var REPOSITORY = /\b(national archives|state archives|public record office|record office|special collections|manuscripts? (?:division|collection|department)|archives?|archivo|archiv|fonds|repository|muniments)\b/i;
+
+var SHELFMARK = /\b(?:[A-Z]{2,4}\s?\d+\/\d+|MSS?\.?\s?\d+|box\s+\d+|folder\s+\d+|carton\s+\d+|f(?:ol)?s?\.\s?\d+[rv]\b)/i;
+
+function looksArchival(ref) {
+  var text = ref || '';
+  return REPOSITORY.test(text) && SHELFMARK.test(text);
+}
 
 function findDoi(ref) {
   var m = /\b(10\.\d{4,9}\/[^\s"'<>,]+)/i.exec(ref);
@@ -656,6 +677,14 @@ function checkOne(ref) {
       }
       return result;
     });
+  } else if (looksArchival(ref)) {
+    result.state = 'archival';
+    result.says = 'This cites a document held in an archive rather than a '
+                + 'published work. Literature indexes do not hold these, so '
+                + 'nothing here can confirm or doubt it; the repository '
+                + 'named is the only place that can.';
+    step = Promise.resolve(result);
+
   } else {
     step = searchCrossref(ref).then(function (candidates) {
       /*
@@ -766,6 +795,7 @@ var LABEL = {
   divergent: 'Points elsewhere',
   unlocatable: 'Not found',
   script: 'Not in these indexes',
+  archival: 'Archival source',
   retracted: 'Retracted',
   unchecked: 'Not checked'
 };
@@ -795,9 +825,10 @@ function renderRow(n, r) {
   return h.join('');
 }
 
-var ORDER = ['confirmed', 'located', 'review', 'script', 'divergent',
-             'unlocatable', 'retracted', 'unchecked'];
+var ORDER = ['confirmed', 'located', 'review', 'script', 'archival',
+             'divergent', 'unlocatable', 'retracted', 'unchecked'];
 var TONE = { confirmed: 'ok', located: '', review: 'warn', script: 'warn',
+             archival: '',
              divergent: 'bad', unlocatable: 'bad', retracted: 'bad',
              unchecked: 'warn' };
 
