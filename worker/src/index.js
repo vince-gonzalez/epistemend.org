@@ -125,6 +125,35 @@ async function verifyStripe(env, raw, header) {
   return diff === 0;
 }
 
+/* ── mail ────────────────────────────────────────────────── */
+
+/*
+  Three things get said to a customer, and only one of them was being said.
+
+  A charge that appears and reverses with no explanation reads as a fault
+  rather than as the policy working, so the refund carries a message. The
+  confirmation exists for the same reason: silence between paying and
+  receiving is where somebody writes to ask whether it went through.
+*/
+async function mail(env, to, subject, lines) {
+  if (!env.RESEND_API_KEY) { return false; }
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + env.RESEND_API_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: 'Epistemend <reports@epistemend.org>',
+      to: [to],
+      reply_to: 'hello@epistemend.org',
+      subject,
+      text: lines.join('\n')
+    })
+  });
+  return r.ok;
+}
+
 /* ── the runner ──────────────────────────────────────────── */
 
 async function wakeRunner(env, jobId) {
@@ -250,6 +279,23 @@ async function stripeHook(request, env) {
   await note(env, jobId, woke ? 'runner woken' : 'runner not reachable',
              woke ? null : 'the schedule will pick it up');
 
+  const named = SKUS[order.sku] ? SKUS[order.sku].name : order.sku;
+  await mail(env, order.email, 'Your ' + named + ' is under way', [
+    'Thank you — the payment went through and the check has started.',
+    '',
+    'Ordered   ' + named,
+    'Reference ' + order.id,
+    '',
+    'The report usually arrives within the hour. It comes as a link you',
+    'control, which you can send on to anyone who needs to see it.',
+    '',
+    'Nothing else is needed from you. If anything looks wrong, reply to',
+    'this message and quote the reference above.',
+    '',
+    '— Epistemend',
+    'www.epistemend.org'
+  ]);
+
   return json({ ok: true, job: jobId });
 }
 
@@ -323,6 +369,9 @@ async function runnerFinish(request, env) {
     .bind(body.job).first();
   if (!job) { return bad('No such job', 404); }
 
+  const order = await env.DB.prepare('SELECT * FROM orders WHERE id = ?')
+    .bind(job.order_id).first();
+
   if (body.ok) {
     await env.DB.prepare(
       `UPDATE jobs SET status = 'complete', result = ?, finished_at = ?
@@ -340,8 +389,6 @@ async function runnerFinish(request, env) {
       "UPDATE jobs SET status = 'needs_attention', finished_at = ? WHERE id = ?"
     ).bind(now(), job.id).run();
 
-    const order = await env.DB.prepare('SELECT * FROM orders WHERE id = ?')
-      .bind(job.order_id).first();
     try {
       const session = await stripe(env, 'checkout/sessions/' +
         order.stripe_session, {});
@@ -351,9 +398,41 @@ async function runnerFinish(request, env) {
           "UPDATE orders SET status = 'refunded' WHERE id = ?"
         ).bind(order.id).run();
         await note(env, job.id, 'refunded', null);
+
+        await mail(env, order.email, 'Your Epistemend order has been refunded', [
+          'The check you ordered could not be completed, so the charge has',
+          'been reversed in full. Nothing is owed and nothing is outstanding.',
+          '',
+          'Reference ' + order.id,
+          '',
+          'This happens when a source we rely on will not answer for long',
+          'enough that we stop trying rather than send you something',
+          'incomplete. The refund takes a few days to appear, depending on',
+          'your bank.',
+          '',
+          'You are welcome to try again later, and if you would like us to',
+          'look at what went wrong, reply to this message with the reference',
+          'above and we will.',
+          '',
+          '— Epistemend',
+          'www.epistemend.org'
+        ]);
       }
     } catch (err) {
       await note(env, job.id, 'refund failed', err.message);
+    }
+
+    /* The operator hears about it either way, because a refund that failed
+       is money that stayed taken. */
+    if (env.OPERATOR_EMAIL) {
+      await mail(env, env.OPERATOR_EMAIL, 'A job needs attention: ' + job.id, [
+        'Job     ' + job.id,
+        'Order   ' + job.order_id,
+        'Attempts ' + job.attempts,
+        '',
+        'It has stopped and the customer has been told.',
+        'The last error: ' + String(body.error || 'not recorded').slice(0, 300)
+      ]);
     }
     return json({ ok: true, gaveUp: true });
   }
