@@ -35,7 +35,7 @@
 :root{
   --bg:#0b0d13; --panel:#12151f; --panel2:#0e1119; --line:#222738;
   --line2:#2c3348;
-  --ink:#f2f4f9; --dim:#96a0ba; --faint:#6d7793;
+  --ink:#f2f4f9; --dim:#96a0ba; --faint:#707a96;
   --accent:#5b9cff; --ok:#3ddba8; --warn:#ffc857; --bad:#ff6b6b;
   --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -131,6 +131,10 @@ pre{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line
 footer{border-top:1px solid var(--line);margin-top:56px;padding:32px 0 70px;
   color:var(--faint);font-size:14.5px}
 footer p{margin:5px 0}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;
+    scroll-behavior:auto!important}
+}
 @media print{.console,.progress,footer{display:none}}
 </style>
 </head>
@@ -146,7 +150,7 @@ footer p{margin:5px 0}
   </div>
 </div>
 
-<div class="wrap">
+<main class="wrap">
 
   <div class="console">
     <label for="refs">The reference list</label>
@@ -162,13 +166,13 @@ Kucsko, G. et al. (2013). Nanometre-scale thermometry in a living cell. Nature, 
     lookups go from your browser straight to Crossref, DataCite, OpenAlex,
     Europe PMC and OpenLibrary. Nothing reaches us, and there is nothing
     here to record it with.</div>
-    <div class="err" id="err" style="display:none"></div>
+    <div class="err" id="err" role="alert" style="display:none"></div>
   </div>
 
   <div id="out">
     <div class="tiles" id="tiles"></div>
-    <div class="progress" id="progress"></div>
-    <div id="rows"></div>
+    <div class="progress" id="progress" role="status" aria-live="polite"></div>
+    <div id="rows" aria-label="Reference results"></div>
   </div>
 
   <div class="sources">
@@ -189,7 +193,7 @@ Kucsko, G. et al. (2013). Nanometre-scale thermometry in a living cell. Nature, 
     <pre>pip install authorecon</pre>
   </div>
 
-</div>
+</main>
 
 <footer>
   <div class="wrap">

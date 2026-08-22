@@ -17,7 +17,7 @@
    ============================================================ */
 :root{
   --bg:#0b0d13; --panel:#12151f; --panel2:#0e1119; --line:#222738;
-  --line2:#2c3348; --ink:#f2f4f9; --dim:#96a0ba; --faint:#6d7793;
+  --line2:#2c3348; --ink:#f2f4f9; --dim:#96a0ba; --faint:#707a96;
   --accent:#5b9cff; --ok:#3ddba8; --bad:#ff6b6b;
   --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -72,6 +72,9 @@ button:disabled{opacity:.5;cursor:default}
 .terms{border-top:1px solid var(--line);margin-top:44px;padding:28px 0 0;
   font-size:14.5px;color:var(--dim)}
 .terms p{margin-bottom:12px;max-width:70ch}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
 footer{border-top:1px solid var(--line);margin-top:48px;padding:30px 0 70px;
   color:var(--faint);font-size:14.5px}
 footer p{margin:5px 0}
@@ -89,7 +92,7 @@ footer p{margin:5px 0}
   </div>
 </div>
 
-<div class="wrap">
+<main class="wrap">
   <form id="form">
     <fieldset>
       <legend>What to check</legend>
@@ -132,8 +135,9 @@ footer p{margin:5px 0}
       <button type="submit" id="go">Continue to payment</button>
       <span class="secure">Payment is handled by Stripe. Card details never
       reach this site.</span>
+      <span class="secure" id="say" role="status" aria-live="polite"></span>
     </div>
-    <div class="err" id="err" style="display:none"></div>
+    <div class="err" id="err" role="alert" style="display:none"></div>
   </form>
 
   <div class="terms">
@@ -146,7 +150,7 @@ footer p{margin:5px 0}
     <p><b>What is kept.</b> The findings, so the report stays reachable. The
     document you pasted is discarded once the report is written.</p>
   </div>
-</div>
+</main>
 
 <footer>
   <div class="wrap">
@@ -210,6 +214,7 @@ function submit(e) {
   STATE.sending = true;
   el('go').disabled = true;
   el('go').textContent = 'Opening payment...';
+  el('say').textContent = 'Opening the payment page.';
 
   fetch(API + '/api/checkout', {
     method: 'POST',
@@ -226,6 +231,7 @@ function submit(e) {
       STATE.sending = false;
       el('go').disabled = false;
       el('go').textContent = 'Continue to payment';
+      el('say').textContent = '';
     });
 }
 
