@@ -328,14 +328,23 @@ function get(url, accept, attempt) {
   attempt = attempt || 0;
   return fetch(url, { headers: { 'Accept': accept || 'application/json' } })
     .then(function (r) {
-      if (r.status === 429 || r.status === 503) {
+      /*
+        429 is the index asking to be asked less often. 500 through 504 are
+        the index having a bad minute - a 504 from OpenAlex ended a whole
+        report and told the reader it was rate limiting, which it was not.
+        Both are worth retrying and they are not the same thing.
+      */
+      if (r.status === 429 || (r.status >= 500 && r.status <= 504)) {
         if (attempt < 4) {
-          return sleep(500 * Math.pow(2, attempt)).then(function () {
+          return sleep(600 * Math.pow(2, attempt)).then(function () {
             return get(url, accept, attempt + 1);
           });
         }
-        var busy = new Error('the index is rate limiting this browser');
+        var busy = new Error(r.status === 429
+          ? 'the index is limiting how often this browser may ask'
+          : 'the index did not answer (' + r.status + ')');
         busy.busy = true;
+        busy.status = r.status;
         throw busy;
       }
       if (!r.ok) { throw new Error(r.status + ' from ' + url.slice(0, 48)); }
@@ -529,8 +538,19 @@ function loadAlex() {
       return page();
     });
   }
+  /*
+    One dead index is not a report. This used to reject, and the rejection
+    reached the top and ended all nine checks over a single slow response.
+    A load that fails is recorded as having failed, and the checks that
+    needed it say so on their own line.
+  */
   return page().then(function () {
-    STATE.alex = { byDoi: byDoi, total: total, noDoi: noDoi };
+    STATE.alex = { byDoi: byDoi, total: total, noDoi: noDoi, failed: false };
+    return STATE.alex;
+  }).catch(function (err) {
+    console.error('loadAlex:', err);
+    STATE.alex = { byDoi: byDoi, total: total, noDoi: noDoi, failed: true,
+                   why: err.message };
     return STATE.alex;
   });
 }
@@ -1398,6 +1418,16 @@ function run(raw) {
       el('blocks').innerHTML = '';
       el('doc').classList.add('on');
 
+      if (STATE.alex.failed) {
+        el('blocks').insertAdjacentHTML('beforeend',
+          '<section class="block"><h3>One source did not answer</h3>' +
+          '<p class="says">The literature index could not be reached: ' +
+          esc(STATE.alex.why) + '. The checks that depend on it are ' +
+          'reported as unchecked below rather than as findings. Everything ' +
+          'drawn from the ORCID record, the repository and the knowledge ' +
+          'graph is unaffected.</p></section>');
+      }
+
       return serial(CHECKS, function (check) {
         var started = Date.now();
         setStep(check.id, 'run');
@@ -1418,7 +1448,8 @@ function run(raw) {
     .catch(function (err) {
       console.error('run:', err);
       el('err').textContent = 'That did not finish: ' + err.message +
-        '. The public APIs rate limit, so waiting a moment usually helps.';
+        (err.busy ? '. Waiting a minute and trying again usually clears it.'
+                  : '.');
       el('err').style.display = 'block';
     })
     .then(function () {
