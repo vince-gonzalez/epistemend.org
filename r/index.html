@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your report — Epistemend</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="A finished Epistemend report.">
+<link rel="canonical" href="https://www.epistemend.org/r/">
+<style>
+/* ============================================================
+   EPISTEMEND — report viewer v1.0.0
+   The page a paid report actually arrives at.
+   F-Keys Creative LLC | www.f-keys.com
+   ------------------------------------------------------------
+   WHY THIS FILE EXISTS
+   The worker mails every finished job a link to /r/#<token>.
+   That page was never built, so the one moment a customer had
+   paid and was most trusting ended on a 404. Nothing else in
+   the chain was wrong; the last step was missing.
+
+   WORKFLOW STACK:
+     1. read the token from the fragment, never the query, so it
+        stays out of referrers, server logs and analytics
+     2. ask the worker for the report by that token
+     3. render whichever of the two report kinds came back
+     4. say plainly when there is nothing to show, and why
+
+   EVERY CELL IS BUILT WITH textContent. Report rows carry
+   titles fetched from Crossref, DataCite and OpenAlex — other
+   people's text. It is never handed to innerHTML.
+
+   ASSET MANIFEST:
+     none. No fonts, no libraries, no analytics, no images.
+
+   BOOT ORDER:
+     styles -> DOM -> boot() -> fetch -> paint
+   ============================================================ */
+:root{
+  --bg:#0b0d13; --panel:#12151f; --panel2:#0e1119; --line:#222738;
+  --line2:#2c3348;
+  --ink:#f2f4f9; --dim:#96a0ba;
+  --accent:#5b9cff; --ok:#3ddba8; --warn:#ffc857; --bad:#ff6b6b;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.6 var(--sans);
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:860px; margin:0 auto; padding:32px 20px 72px}
+header{border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:28px}
+.brand{
+  font:700 14px/1 var(--mono); letter-spacing:.18em;
+  color:var(--accent); text-transform:uppercase; margin:0 0 10px;
+}
+h1{font-size:27px; line-height:1.25; margin:0 0 6px; font-weight:650}
+.sub{color:var(--dim); font-size:15px; margin:0}
+h2{
+  font-size:19px; margin:34px 0 12px; font-weight:650;
+  padding-bottom:8px; border-bottom:1px solid var(--line);
+}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+.tiles{display:flex; flex-wrap:wrap; gap:10px; margin:18px 0 6px}
+.tile{
+  background:var(--panel); border:1px solid var(--line2); border-radius:8px;
+  padding:12px 16px; min-width:118px;
+}
+.tile .n{font:700 25px/1.1 var(--mono); display:block}
+.tile .k{font-size:13px; color:var(--dim); text-transform:lowercase}
+.tile.ok .n{color:var(--ok)}
+.tile.warn .n{color:var(--warn)}
+.tile.bad .n{color:var(--bad)}
+.row{
+  background:var(--panel2); border:1px solid var(--line); border-left-width:4px;
+  border-radius:6px; padding:14px 16px; margin:0 0 10px;
+}
+.row.bad{border-left-color:var(--bad)}
+.row.warn{border-left-color:var(--warn)}
+.row.ok{border-left-color:var(--ok)}
+.row .state{
+  font:700 13px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+  display:inline-block; margin-bottom:8px;
+}
+.row.bad .state{color:var(--bad)}
+.row.warn .state{color:var(--warn)}
+.row.ok .state{color:var(--ok)}
+.row .ref{font-size:15px; margin:0 0 8px; word-wrap:break-word}
+.row .says{color:var(--dim); font-size:14px; margin:0}
+.row .found{
+  color:var(--dim); font-size:13px; font-family:var(--mono);
+  margin:8px 0 0; word-wrap:break-word;
+}
+.lines{
+  background:var(--panel2); border:1px solid var(--line); border-radius:6px;
+  padding:14px 16px; margin:0 0 14px;
+  font:14px/1.7 var(--mono); white-space:pre-wrap; word-wrap:break-word;
+}
+.err{color:var(--warn); font-size:14px; margin:6px 0 14px}
+.note{
+  background:var(--panel); border:1px solid var(--line2); border-radius:8px;
+  padding:16px 18px; margin:30px 0 0; font-size:14px; color:var(--dim);
+}
+.note strong{color:var(--ink)}
+button{
+  font:600 14px var(--sans); color:var(--ink); background:var(--panel);
+  border:1px solid var(--line2); border-radius:6px; padding:9px 15px;
+  cursor:pointer;
+}
+button:hover{border-color:var(--accent)}
+footer{
+  margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
+  color:var(--dim); font-size:14px;
+}
+/* Print re-states the SEMANTIC colours, not only the surfaces.
+   The first version swapped the backgrounds to white and left the
+   state colours alone, so on paper the warn label came out at
+   1.5:1 and the ok label at 1.8:1 - the two words carrying the
+   finding, effectively invisible, on a page whose whole purpose
+   is to be printed and kept. Each value below clears 4.5:1
+   against white while holding its hue. */
+@media print{
+  :root{
+    --bg:#fff; --panel:#fff; --panel2:#fff; --ink:#000; --dim:#333;
+    --line:#bbb; --line2:#999;
+    --accent:#086aff; --ok:#198461; --warn:#9d6a00; --bad:#eb0000;
+  }
+  body{font-size:12pt}
+  button{display:none}
+  .row{break-inside:avoid; page-break-inside:avoid}
+  a{color:#000; text-decoration:underline}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="brand">Epistemend</p>
+    <h1 id="title">Fetching your report</h1>
+    <p class="sub" id="sub">One moment.</p>
+  </header>
+  <main id="main"></main>
+  <footer>
+    <a href="/">Epistemend</a> &middot; part of <a href="https://f-keys.com">F-Keys</a>
+  </footer>
+</div>
+<script>
+/* ── state ─────────────────────────────────────────────────── */
+
+var API = 'https://orders.epistemend.org';
+
+var STATE = {
+  token: '',
+  result: null,
+  finished: null
+};
+
+/* Worst first. A report read from the top should open on what
+   needs attention, not on the things that were fine. */
+var ORDER = ['retracted', 'divergent', 'unlocatable', 'review',
+             'unchecked', 'other script', 'untitled', 'archival',
+             'located', 'confirmed'];
+
+var TONE = {
+  retracted: 'bad', divergent: 'bad', unlocatable: 'bad',
+  review: 'warn', unchecked: 'warn', 'other script': 'warn',
+  untitled: 'warn', archival: 'ok', located: 'ok', confirmed: 'ok'
+};
+
+/* ── helpers ───────────────────────────────────────────────── */
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) { n.className = cls; }
+  if (text !== undefined && text !== null) { n.textContent = String(text); }
+  return n;
+}
+
+function say(title, sub) {
+  document.getElementById('title').textContent = title;
+  document.getElementById('sub').textContent = sub || '';
+}
+
+function main() { return document.getElementById('main'); }
+
+function clear() {
+  var m = main();
+  while (m.firstChild) { m.removeChild(m.firstChild); }
+  return m;
+}
+
+function whenText(stamp) {
+  if (!stamp) { return ''; }
+  var n = Number(stamp);
+  if (!isFinite(n)) { return ''; }
+  var d = new Date(n < 100000000000 ? n * 1000 : n);
+  if (isNaN(d.getTime())) { return ''; }
+  return d.toLocaleString();
+}
+
+/* ── the two report kinds ──────────────────────────────────── */
+
+function paintReferenceCheck(r) {
+  var m = clear();
+  var rows = r.references || [];
+
+  /* Counted from the rows on this page, not from the counts field.
+     The runner derives one from the other so they agree, but if they
+     ever stopped agreeing this page would print a summary that
+     contradicts the list directly beneath it - on a document somebody
+     paid for and may forward to a journal. Counting what is actually
+     shown makes that impossible rather than unlikely. */
+  var counts = {};
+  rows.forEach(function (row) {
+    var k = row.state || 'unknown';
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  if (!rows.length) { counts = r.counts || {}; }
+
+  /* ORDER is a ranking, not a whitelist. Both loops below used to walk
+     ORDER alone, so a state authorecon added later would drop out of the
+     page silently - references paid for, present in the data, and shown
+     nowhere. Anything unranked is appended instead, in the order it
+     first appears. */
+  var seq = ORDER.filter(function (s) { return counts[s]; });
+  Object.keys(counts).forEach(function (s) {
+    if (seq.indexOf(s) === -1) { seq.push(s); }
+  });
+
+  say('Reference check',
+      rows.length + (rows.length === 1 ? ' reference read' : ' references read'));
+
+  var tiles = el('div', 'tiles');
+  var i, state, n;
+  for (i = 0; i < seq.length; i++) {
+    state = seq[i];
+    n = counts[state];
+    if (!n) { continue; }
+    var t = el('div', 'tile ' + (TONE[state] || ''));
+    t.appendChild(el('span', 'n', n));
+    t.appendChild(el('span', 'k', state));
+    tiles.appendChild(t);
+  }
+  if (tiles.childNodes.length) { m.appendChild(tiles); }
+
+  var trouble = (counts.retracted || 0) + (counts.divergent || 0) +
+                (counts.unlocatable || 0);
+  if (!trouble) {
+    m.appendChild(el('p', 'sub',
+      'Nothing in this list is retracted, divergent or unlocatable.'));
+  }
+
+  /* Grouped worst first, so the top of the page is the part that
+     needs doing something about. */
+  for (i = 0; i < seq.length; i++) {
+    state = seq[i];
+    var group = rows.filter(function (row) { return row.state === state; });
+    if (!group.length) { continue; }
+    m.appendChild(el('h2', null,
+      state.charAt(0).toUpperCase() + state.slice(1) +
+      ' (' + group.length + ')'));
+    group.forEach(function (row) {
+      var box = el('div', 'row ' + (TONE[row.state] || ''));
+      box.appendChild(el('span', 'state', row.state || 'unknown'));
+      box.appendChild(el('p', 'ref', row.ref || ''));
+      if (row.says) { box.appendChild(el('p', 'says', row.says)); }
+      var found = row.found;
+      if (found && found.title) {
+        box.appendChild(el('p', 'found',
+          'index says: ' + found.title +
+          (found.year ? ' (' + found.year + ')' : '')));
+      }
+      if (row.given) {
+        box.appendChild(el('p', 'found', 'given: ' + row.given));
+      }
+      m.appendChild(box);
+    });
+  }
+}
+
+function paintRecordReport(r) {
+  var m = clear();
+  say('Record report', r.orcid || '');
+  var sections = r.sections || [];
+  if (!sections.length) {
+    m.appendChild(el('p', 'sub', 'This report came back with no sections.'));
+    return;
+  }
+  sections.forEach(function (s) {
+    m.appendChild(el('h2', null, s.title || 'Section'));
+    if (s.error) {
+      m.appendChild(el('p', 'err', 'Could not be checked: ' + s.error));
+    }
+    var lines = s.lines || [];
+    if (lines.length) {
+      m.appendChild(el('div', 'lines', lines.join('\n')));
+    } else if (!s.error) {
+      m.appendChild(el('p', 'sub', 'Nothing to report here.'));
+    }
+  });
+}
+
+function paintTail() {
+  var m = main();
+  var note = el('div', 'note');
+  var p = el('p', null, '');
+  p.appendChild(el('strong', null, 'This address is yours. '));
+  p.appendChild(document.createTextNode(
+    'Anyone with the link can read this report, and nobody without it can. ' +
+    'Send it to whoever needs it, or print this page to keep it.'));
+  note.appendChild(p);
+  if (STATE.finished) {
+    var w = whenText(STATE.finished);
+    if (w) { note.appendChild(el('p', null, 'Finished ' + w + '.')); }
+  }
+  var b = el('button', null, 'Print this report');
+  b.addEventListener('click', function () { window.print(); });
+  note.appendChild(b);
+  m.appendChild(note);
+}
+
+/* ── boot ──────────────────────────────────────────────────── */
+
+function fail(title, sub) {
+  clear();
+  say(title, sub);
+}
+
+function boot() {
+  STATE.token = (window.location.hash || '').replace('#', '').trim();
+
+  if (!STATE.token) {
+    fail('No report named',
+         'This page needs the full address from your email, including the ' +
+         'part after the # sign. Copy the whole line rather than retyping it.');
+    return;
+  }
+
+  fetch(API + '/api/report?t=' + encodeURIComponent(STATE.token))
+    .then(function (res) {
+      if (res.status === 404) {
+        /* Not found and not yet finished are the same response from the
+           worker, so this must not claim the report does not exist. */
+        fail('Not ready, or not here',
+             'Either this report is still being worked on, or that address ' +
+             'is not one of ours. If you paid within the last hour, give it ' +
+             'a few more minutes. If it has been longer, reply to your ' +
+             'receipt and it will be looked at.');
+        return null;
+      }
+      if (!res.ok) { throw new Error('HTTP ' + res.status); }
+      return res.json();
+    })
+    .then(function (data) {
+      if (!data) { return; }
+      STATE.result = data.result || {};
+      STATE.finished = data.finished;
+      if (STATE.result.kind === 'reference-check') {
+        paintReferenceCheck(STATE.result);
+      } else if (STATE.result.kind === 'record-report') {
+        paintRecordReport(STATE.result);
+      } else {
+        fail('Unreadable report',
+             'This report came back in a shape this page does not know. ' +
+             'Reply to your receipt and it will be sent to you directly.');
+        return;
+      }
+      paintTail();
+    })
+    .catch(function () {
+      fail('Could not reach the report',
+           'The connection failed rather than the report being missing. ' +
+           'Try again in a moment; the link does not expire.');
+    });
+}
+
+window.addEventListener('hashchange', boot);
+boot();
+</script>
+</body>
+</html>
