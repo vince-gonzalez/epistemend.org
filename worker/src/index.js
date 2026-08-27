@@ -35,7 +35,7 @@ const SKUS = {
   'reference-check': {
     amount: 1900,
     name: 'Reference Check',
-    blurb: 'Every reference in one document, resolved and reported'
+    blurb: 'Every reference resolved, and every link followed'
   },
   'record-report': {
     amount: 3900,
