@@ -16,8 +16,12 @@ database_id = "PUT_THE_DATABASE_ID_HERE"
 #   GITHUB_TOKEN             a fine-grained token with Contents: read/write
 #   RUNNER_KEY               any long random string; the runner sends it back
 #   RESEND_API_KEY           re_...      the same key the runner uses
+#   TURNSTILE_SECRET         from the Turnstile widget
 #
 [vars]
 GITHUB_REPO = "vince-gonzalez/epistemend.org"
 # Where a job that stopped gets reported. Not a secret.
 OPERATOR_EMAIL = "hello@epistemend.org"
+# Where the Turnstile widget is SOLVED - the site, not this worker.
+# Never add localhost here: this file is the deployed configuration.
+TURNSTILE_HOSTNAMES = "www.epistemend.org,epistemend.org"

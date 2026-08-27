@@ -6,6 +6,7 @@
 <title>Order a check — Epistemend</title>
 <meta name="description" content="A full reference check or a sweep of an author's published record, run against every source and delivered to your inbox.">
 <link rel="canonical" href="https://www.epistemend.org/order/">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 <style>
 /* ============================================================
    ORDER v1.0.0
@@ -67,6 +68,7 @@ button{background:var(--accent);color:#06090f;border:0;border-radius:8px;
 button:hover:not(:disabled){filter:brightness(1.08)}
 button:disabled{opacity:.5;cursor:default}
 .secure{font-size:13.5px;color:var(--faint)}
+.turnstile{margin:22px 0 4px;min-height:65px}
 .err{margin-top:16px;font-size:15px;color:var(--bad)}
 
 .terms{border-top:1px solid var(--line);margin-top:44px;padding:28px 0 0;
@@ -133,6 +135,8 @@ footer p{margin:5px 0}
     <div class="note" id="payloadNote">Any citation style. The list is used
     for this check and is not kept after the report is delivered.</div>
 
+    <div id="turnstile" class="turnstile"></div>
+
     <div class="act">
       <button type="submit" id="go">Continue to payment</button>
       <span class="secure">Payment is handled by Stripe. Card details never
@@ -163,7 +167,7 @@ footer p{margin:5px 0}
 </footer>
 
 <script>
-var STATE = { sending: false };
+var STATE = { sending: false, widget: null };
 var API = 'https://orders.epistemend.org';
 
 function el(id) { return document.getElementById(id); }
@@ -194,6 +198,39 @@ function choose(sku) {
   el('payload').placeholder = c.placeholder;
 }
 
+
+/* ── Turnstile ──────────────────────────────────────────────
+   Rendered explicitly rather than by class, because the widget
+   id is needed later. A token is redeemed once at siteverify;
+   this page stays open after a failed attempt, so without a
+   reset the second try sends a token the server has already
+   spent and the person is told their order failed twice for
+   what is really one problem. */
+
+var SITEKEY = 'TURNSTILE_SITEKEY_HERE';
+
+function mountTurnstile() {
+  if (!window.turnstile) { return; }
+  STATE.widget = window.turnstile.render('#turnstile', {
+    sitekey: SITEKEY,
+    action: 'order',
+    theme: 'dark'
+  });
+}
+
+/* The api.js load is async and may land either side of this
+   script, so both orders have to work. */
+window.onloadTurnstileCallback = mountTurnstile;
+if (window.turnstile) { mountTurnstile(); }
+else { window.addEventListener('load', mountTurnstile); }
+
+function resetTurnstile() {
+  if (window.turnstile && STATE.widget !== null &&
+      STATE.widget !== undefined) {
+    window.turnstile.reset(STATE.widget);
+  }
+}
+
 function submit(e) {
   e.preventDefault();
   if (STATE.sending) { return; }
@@ -218,10 +255,40 @@ function submit(e) {
   el('go').textContent = 'Opening payment...';
   el('say').textContent = 'Opening the payment page.';
 
+  var token = window.turnstile
+
+    ? window.turnstile.getResponse(STATE.widget) : '';
+
+  if (!token) {
+
+    STATE.sending = false;
+
+    el('go').disabled = false;
+
+    el('go').textContent = 'Continue to payment';
+
+    el('say').textContent = '';
+
+    return fail('The check above has not finished. Give it a '
+
+              + 'moment and try again; nothing has been charged.');
+
+  }
+
+  
+
   fetch(API + '/api/checkout', {
+
     method: 'POST',
+
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sku: sku, email: email, payload: payload })
+
+    body: JSON.stringify({ sku: sku, email: email,
+
+                           payload: payload,
+
+                           'cf-turnstile-response': token })
+
   }).then(function (r) { return r.json(); })
     .then(function (d) {
       if (d.url) { window.location = d.url; return; }
@@ -229,6 +296,9 @@ function submit(e) {
     })
     .catch(function (err) {
       console.error('checkout:', err);
+      /* The token was redeemed by the attempt that just failed, or
+         refused. Either way it cannot be sent again. */
+      resetTurnstile();
       fail(err.message + ' Nothing has been charged.');
       STATE.sending = false;
       el('go').disabled = false;

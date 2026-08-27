@@ -182,11 +182,70 @@ async function note(env, jobId, event, detail) {
    .run();
 }
 
+/* ── Turnstile ─────────────────────────────────────────────── */
+
+/*
+  Checked before anything is written down.
+
+  /api/checkout used to insert the order row and open a Stripe session
+  for anyone who posted to it. Each call cost a D1 write of up to 200KB
+  and a session creation, and cost the sender nothing, which is the shape
+  of a bill somebody else runs up for you.
+
+  Fails closed. If siteverify cannot be reached, or answers with
+  something that is not JSON, the order does not proceed - an outage of
+  the check is not a reason to stop checking.
+
+  The hostname compared here is where the widget was SOLVED, which is the
+  site, not this worker. localhost is never in the deployed list.
+*/
+async function turnstileOk(env, token, ip) {
+  if (typeof token !== 'string' || !token || token.length > 2048) {
+    return false;
+  }
+  const allowed = new Set(
+    String(env.TURNSTILE_HOSTNAMES || '')
+      .split(',').map((h) => h.trim()).filter(Boolean)
+  );
+  if (!env.TURNSTILE_SECRET || allowed.size === 0) { return false; }
+
+  let out;
+  try {
+    const r = await fetch(
+      'https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: AbortSignal.timeout(10000),
+        body: new URLSearchParams({
+          secret: env.TURNSTILE_SECRET,
+          response: token,
+          remoteip: ip || ''
+        })
+      });
+    if (!r.ok) { throw new Error('siteverify ' + r.status); }
+    out = await r.json();
+  } catch (e) {
+    return false;
+  }
+
+  return out.success === true &&
+         out.action === 'order' &&
+         allowed.has(out.hostname);
+}
+
 /* ── an order arrives ────────────────────────────────────── */
 
 async function checkout(request, env) {
   let body;
   try { body = await request.json(); } catch { return bad('Unreadable request'); }
+
+  /* Before the row, before the session, before anything that costs. */
+  const passed = await turnstileOk(
+    env, body && body['cf-turnstile-response'],
+    request.headers.get('CF-Connecting-IP'));
+  if (!passed) {
+    return bad('That check did not pass. Reload the page and try again.', 403);
+  }
 
   const sku = SKUS[body.sku];
   if (!sku) { return bad('Unknown product'); }
