@@ -2,12 +2,18 @@ name = "epistemend-orders"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
+# The order page calls https://orders.epistemend.org; the zone lives in
+# this account, so the deploy binds the domain itself.
+[[routes]]
+pattern = "orders.epistemend.org"
+custom_domain = true
+
 # The order state. D1 sits on the same platform as the Worker, so there is
 # one deploy, one set of credentials, and nothing to keep in sync.
 [[d1_databases]]
 binding = "DB"
 database_name = "epistemend"
-database_id = "PUT_THE_DATABASE_ID_HERE"
+database_id = "5ef7eaf3-7585-49ac-8eba-414d75457759"
 
 # Set with `wrangler secret put <NAME>`, never in this file:
 #
