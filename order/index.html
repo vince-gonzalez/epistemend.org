@@ -6,7 +6,7 @@
 <title>Order a check — Epistemend</title>
 <meta name="description" content="A full reference check or a sweep of an author's published record, run against every source and delivered to your inbox.">
 <link rel="canonical" href="https://www.epistemend.org/order/">
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" async defer></script>
 <style>
 /* ============================================================
    ORDER v1.0.0
@@ -210,7 +210,9 @@ function choose(sku) {
 var SITEKEY = '0x4AAAAAAEe8cYI_dbLQ1XgY';
 
 function mountTurnstile() {
-  if (!window.turnstile) { return; }
+  if (!window.turnstile ||
+      typeof window.turnstile.render !== 'function') { return; }
+  if (STATE.widget !== null) { return; }   /* never mount twice */
   STATE.widget = window.turnstile.render('#turnstile', {
     sitekey: SITEKEY,
     action: 'order',
@@ -218,11 +220,24 @@ function mountTurnstile() {
   });
 }
 
-/* The api.js load is async and may land either side of this
-   script, so both orders have to work. */
+/* api.js installs window.turnstile as a stub BEFORE it is ready
+   to render. Testing the object for truthiness therefore passes
+   while .render is still undefined, which is exactly what
+   happened: the call threw, the widget never mounted, and the
+   order page could not take an order at all. The only reliable
+   signal is the onload callback named in the script URL, so the
+   name is declared before api.js can fire it, and every other
+   path checks for the method rather than the object. */
+function turnstileReady() {
+  return !!(window.turnstile &&
+            typeof window.turnstile.render === 'function');
+}
+
 window.onloadTurnstileCallback = mountTurnstile;
-if (window.turnstile) { mountTurnstile(); }
-else { window.addEventListener('load', mountTurnstile); }
+if (turnstileReady()) { mountTurnstile(); }
+window.addEventListener('load', function () {
+  if (STATE.widget === null && turnstileReady()) { mountTurnstile(); }
+});
 
 function resetTurnstile() {
   if (window.turnstile && STATE.widget !== null &&
