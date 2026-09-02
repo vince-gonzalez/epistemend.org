@@ -21,10 +21,69 @@
 set -uo pipefail
 umask 077
 
+# ── refuse to start unless it can actually succeed ───────────
+# Every check below was a way this script could ask for five
+# secrets, print FAILED five times, and not say why.
+
 if ! command -v wrangler >/dev/null 2>&1; then
-  echo "wrangler is not installed. Run:  npm install -g wrangler" >&2
+  echo "STOP: wrangler is not installed." >&2
+  echo "  Run this, then run this script again:" >&2
+  echo "    npm install -g wrangler" >&2
   exit 1
 fi
+
+if [ ! -f wrangler.toml ]; then
+  echo "STOP: no wrangler.toml here, so this is the wrong folder." >&2
+  echo "  Run:  cd C:/tmp/epistemend.org/worker" >&2
+  exit 1
+fi
+
+if ! wrangler whoami >/dev/null 2>&1; then
+  echo "STOP: wrangler is not logged in to Cloudflare." >&2
+  echo "  Run this, approve in the browser, then run this again:" >&2
+  echo "    wrangler login" >&2
+  exit 1
+fi
+
+echo "Signed in to Cloudflare as:"
+wrangler whoami 2>/dev/null | grep -iE "email|account" | head -3 | sed 's/^/  /'
+
+cat <<'PREFLIGHT'
+
+------------------------------------------------------------
+OPEN THESE FOUR TABS BEFORE YOU START.
+The script asks in this order and will not wait for you to
+go hunting; skipping one is fine, you can run it again.
+
+  1  Turnstile secret key
+     dash.cloudflare.com > Turnstile > your widget
+     > Settings > Secret Key > click the eye
+
+  2  Stripe secret key
+     dashboard.stripe.com > Developers > API keys
+     > Secret key > Reveal test key   (sk_test_...)
+
+  3  Stripe webhook secret
+     YOU DO NOT HAVE THIS YET. Press Enter to skip it.
+
+  4  Resend API key
+     resend.com > API Keys > Create API Key
+     name: epistemend, permission: Sending access  (re_...)
+
+  5  GitHub token
+     github.com > your avatar > Settings
+     > Developer settings > Personal access tokens
+     > Fine-grained tokens > Generate new token
+     name: epistemend-runner
+     Repository access: Only select repositories > epistemend.org
+     Permissions > Repository permissions > Contents: Read and write
+
+Nothing you type is shown on screen. That is deliberate.
+------------------------------------------------------------
+PREFLIGHT
+
+printf 'Press Enter when those tabs are open. '
+read -r _
 
 put() {
   local name="$1" prompt="$2" value=""
