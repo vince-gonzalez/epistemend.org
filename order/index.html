@@ -172,7 +172,7 @@ footer p{margin:5px 0}
 </footer>
 
 <script>
-var STATE = { sending: false, solved: false };
+var STATE = { sending: false, solved: false, turnstileError: '' };
 var API = 'https://orders.epistemend.org';
 
 function el(id) { return document.getElementById(id); }
@@ -226,8 +226,19 @@ function onTurnstileSolved() {
   el('err').style.display = 'none';
 }
 
-function onTurnstileError() {
+/* Turnstile hands the error callback a code. Throwing it away is how
+   this page spent an afternoon looking like a broken button: the widget
+   was being refused for a stated reason and nothing on the page or in
+   the console said so. The code is kept, shown, and repeated in the
+   submit message, so the next failure explains itself. */
+function onTurnstileError(code) {
   STATE.solved = false;
+  STATE.turnstileError = String(code || 'unknown');
+  var box = el('err');
+  box.textContent = 'The security check could not start (code '
+    + STATE.turnstileError + '). Nothing has been charged. Email '
+    + 'hello@epistemend.org and the same check will be run for you.';
+  box.style.display = 'block';
 }
 
 /* No widget id is kept: there is exactly one widget on this page,
@@ -284,10 +295,10 @@ function submit(e) {
 
     return fail(!window.turnstile
         || typeof window.turnstile.getResponse !== 'function'
-        ? 'The security check could not load, so the order cannot be sent '
-        + 'from this browser. A blocker or a restricted network is the '
-        + 'usual cause. Email hello@epistemend.org and the same check '
-        + 'will be run for you.'
+        ? 'The security check could not load'
+        + (STATE.turnstileError ? ' (code ' + STATE.turnstileError + ')' : '')
+        + ', so the order cannot be sent from this browser. Email '
+        + 'hello@epistemend.org and the same check will be run for you.'
         : 'The check above has not finished. Give it a moment and try '
         + 'again; nothing has been charged.');
 
