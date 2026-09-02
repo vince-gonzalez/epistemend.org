@@ -6,7 +6,7 @@
 <title>Order a check — Epistemend</title>
 <meta name="description" content="A full reference check or a sweep of an author's published record, run against every source and delivered to your inbox.">
 <link rel="canonical" href="https://www.epistemend.org/order/">
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" async defer></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
 /* ============================================================
    ORDER v1.0.0
@@ -135,7 +135,12 @@ footer p{margin:5px 0}
     <div class="note" id="payloadNote">Any citation style. The list is used
     for this check and is not kept after the report is delivered.</div>
 
-    <div id="turnstile" class="turnstile"></div>
+    <div id="turnstile" class="turnstile cf-turnstile"
+           data-sitekey="0x4AAAAAAEe8cYI_dbLQ1XgY"
+           data-action="order"
+           data-theme="dark"
+           data-callback="onTurnstileSolved"
+           data-error-callback="onTurnstileError"></div>
 
     <div class="act">
       <button type="submit" id="go">Continue to payment</button>
@@ -167,7 +172,7 @@ footer p{margin:5px 0}
 </footer>
 
 <script>
-var STATE = { sending: false, widget: null };
+var STATE = { sending: false, solved: false };
 var API = 'https://orders.epistemend.org';
 
 function el(id) { return document.getElementById(id); }
@@ -200,50 +205,45 @@ function choose(sku) {
 
 
 /* ── Turnstile ──────────────────────────────────────────────
-   Rendered explicitly rather than by class, because the widget
-   id is needed later. A token is redeemed once at siteverify;
-   this page stays open after a failed attempt, so without a
-   reset the second try sends a token the server has already
-   spent and the person is told their order failed twice for
-   what is really one problem. */
+   Rendered implicitly, by class and data- attributes.
 
-var SITEKEY = '0x4AAAAAAEe8cYI_dbLQ1XgY';
+   It was explicit before, with onload=onloadTurnstileCallback on
+   the script URL. That cannot work here: api.js is async in the
+   head and the callback was defined at the foot of the body, so
+   the name was still undefined when Turnstile looked for it, and
+   Turnstile stopped setting itself up. The symptom was
+   window.turnstile existing as an object with no methods on it,
+   which then threw inside the submit handler and made the button
+   do nothing at all.
 
-function mountTurnstile() {
+   Implicit render has no such ordering to get wrong: the markup
+   is already in the document before api.js runs, and Cloudflare's
+   own demo page does it this way. Nothing here is called until
+   Turnstile itself calls it. */
+
+function onTurnstileSolved() {
+  STATE.solved = true;
+  el('err').style.display = 'none';
+}
+
+function onTurnstileError() {
+  STATE.solved = false;
+}
+
+/* No widget id is kept: there is exactly one widget on this page,
+   and both of these act on the first one when given no argument. */
+
+function turnstileToken() {
   if (!window.turnstile ||
-      typeof window.turnstile.render !== 'function') { return; }
-  if (STATE.widget !== null) { return; }   /* never mount twice */
-  STATE.widget = window.turnstile.render('#turnstile', {
-    sitekey: SITEKEY,
-    action: 'order',
-    theme: 'dark'
-  });
+      typeof window.turnstile.getResponse !== 'function') { return ''; }
+  try { return window.turnstile.getResponse() || ''; }
+  catch (e) { return ''; }
 }
-
-/* api.js installs window.turnstile as a stub BEFORE it is ready
-   to render. Testing the object for truthiness therefore passes
-   while .render is still undefined, which is exactly what
-   happened: the call threw, the widget never mounted, and the
-   order page could not take an order at all. The only reliable
-   signal is the onload callback named in the script URL, so the
-   name is declared before api.js can fire it, and every other
-   path checks for the method rather than the object. */
-function turnstileReady() {
-  return !!(window.turnstile &&
-            typeof window.turnstile.render === 'function');
-}
-
-window.onloadTurnstileCallback = mountTurnstile;
-if (turnstileReady()) { mountTurnstile(); }
-window.addEventListener('load', function () {
-  if (STATE.widget === null && turnstileReady()) { mountTurnstile(); }
-});
 
 function resetTurnstile() {
-  if (window.turnstile && STATE.widget !== null &&
-      STATE.widget !== undefined) {
-    window.turnstile.reset(STATE.widget);
-  }
+  if (!window.turnstile ||
+      typeof window.turnstile.reset !== 'function') { return; }
+  try { window.turnstile.reset(); } catch (e) { }
 }
 
 function submit(e) {
@@ -270,9 +270,7 @@ function submit(e) {
   el('go').textContent = 'Opening payment...';
   el('say').textContent = 'Opening the payment page.';
 
-  var token = window.turnstile
-
-    ? window.turnstile.getResponse(STATE.widget) : '';
+  var token = turnstileToken();
 
   if (!token) {
 
@@ -284,9 +282,14 @@ function submit(e) {
 
     el('say').textContent = '';
 
-    return fail('The check above has not finished. Give it a '
-
-              + 'moment and try again; nothing has been charged.');
+    return fail(!window.turnstile
+        || typeof window.turnstile.getResponse !== 'function'
+        ? 'The security check could not load, so the order cannot be sent '
+        + 'from this browser. A blocker or a restricted network is the '
+        + 'usual cause. Email hello@epistemend.org and the same check '
+        + 'will be run for you.'
+        : 'The check above has not finished. Give it a moment and try '
+        + 'again; nothing has been charged.');
 
   }
 
