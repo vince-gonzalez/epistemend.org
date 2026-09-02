@@ -135,7 +135,12 @@ footer p{margin:5px 0}
     <div class="note" id="payloadNote">Any citation style. The list is used
     for this check and is not kept after the report is delivered.</div>
 
-    <div id="turnstile" class="turnstile cf-turnstile"
+    <!-- The id is NOT "turnstile". An element id becomes a global, so
+         id="turnstile" made window.turnstile the div itself; api.js saw
+         its own namespace already occupied and never installed render,
+         getResponse or reset. The widget never appeared and the submit
+         handler threw on a div. Do not name it after the library. -->
+    <div id="turnstile-box" class="turnstile cf-turnstile"
            data-sitekey="0x4AAAAAAEe8cYI_dbLQ1XgY"
            data-action="order"
            data-theme="dark"
