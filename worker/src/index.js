@@ -256,7 +256,19 @@ async function checkout(request, env) {
   }
 
   const payload = String(body.payload || '').trim();
-  if (payload.length < 24) {
+
+  /* What counts as enough depends on what was bought.
+     A flat 24-character floor made the record report impossible to
+     order: an ORCID is 19 characters, and an ORCID is precisely what
+     that product asks for. The field said "by ORCID or by name" and
+     then refused an ORCID. */
+  const ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dXx]$/;
+  const first = payload.split(/\s+/)[0] || '';
+  if (body.sku === 'record-report') {
+    if (!ORCID.test(first) && payload.length < 6) {
+      return bad('Name the author to sweep, by ORCID or by name');
+    }
+  } else if (payload.length < 24) {
     return bad('There is nothing here to check');
   }
   if (payload.length > 200000) {

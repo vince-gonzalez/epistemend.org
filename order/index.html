@@ -275,10 +275,23 @@ function submit(e) {
     return fail('That email address does not look right. The report is sent '
               + 'there, so it needs to be one you read.');
   }
-  if (payload.length < 24) {
-    return fail(sku === 'record-report'
-      ? 'Name the author to sweep, by ORCID or by name.'
-      : 'Paste the reference list to check.');
+  /* The floor depends on the product. A flat 24 characters made the
+     record report impossible to order, because an ORCID is 19 and an
+     ORCID is what that product asks for. */
+  var ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dXx]$/;
+  var firstWord = payload.split(/\s+/)[0] || '';
+  if (sku === 'record-report') {
+    if (!ORCID.test(firstWord) && payload.length < 6) {
+      return fail('Give the author to sweep: an ORCID like '
+                + '0000-0002-1825-0097, or their published name.');
+    }
+  } else if (payload.length < 24) {
+    if (ORCID.test(firstWord)) {
+      return fail('That is an ORCID, and this is the reference check, '
+                + 'which reads a bibliography. To sweep an author by '
+                + 'ORCID, choose Record Report above.');
+    }
+    return fail('Paste the reference list to check.');
   }
 
   STATE.sending = true;

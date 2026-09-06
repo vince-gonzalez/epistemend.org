@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
 # ============================================================
-# epistemend — put the secrets in, once
+# epistemend — put the secrets in, one at a time
 # F-Keys | www.f-keys.com
 # ------------------------------------------------------------
 # Run this in YOUR terminal, from the worker/ directory:
 #
 #     bash set-secrets.sh
 #
-# It asks for each value, shows nothing as you type, and pipes
-# it straight into wrangler. Nothing is echoed, nothing is
-# written to a file, and nothing is left in shell history.
+# It asks for ONE key at a time and tells you where that key
+# lives before it asks. Go and get that one, come back, paste,
+# press Enter. Then it asks for the next one.
 #
-# Skip any one by pressing Enter on an empty line.
+# There is nothing to prepare and nothing to write down first.
+# An earlier version told you to open five tabs and copy five
+# values before starting, which cannot be done: there is one
+# clipboard. It also said to park them in a text file, which is
+# how live keys end up somewhere they get synced.
 #
-# RUNNER_KEY is generated here rather than asked for, and
-# printed ONCE at the end, because the same value has to go
-# into GitHub as well. It is the only thing this prints.
+# Nothing you type is echoed. Nothing is written to disk.
+# Nothing is left in shell history.
+#
+# Press Enter on an empty prompt to skip that one. Run the
+# script again later for just the ones you skipped.
 # ============================================================
 
 set -uo pipefail
 umask 077
 
 # ── refuse to start unless it can actually succeed ───────────
-# Every check below was a way this script could ask for five
-# secrets, print FAILED five times, and not say why.
+# Each of these was a way to ask for five secrets, print FAILED
+# five times, and explain none of it.
 
 if ! command -v wrangler >/dev/null 2>&1; then
   echo "STOP: wrangler is not installed." >&2
@@ -45,119 +51,177 @@ if ! wrangler whoami >/dev/null 2>&1; then
   exit 1
 fi
 
+echo
 echo "Signed in to Cloudflare as:"
 wrangler whoami 2>/dev/null | grep -iE "email|account" | head -3 | sed 's/^/  /'
 
-cat <<'PREFLIGHT'
+# ── one at a time ────────────────────────────────────────────
 
-------------------------------------------------------------
-OPEN THESE FOUR TABS BEFORE YOU START.
-The script asks in this order and will not wait for you to
-go hunting; skipping one is fine, you can run it again.
-
-  1  Turnstile secret key
-     dash.cloudflare.com > Turnstile > your widget
-     > Settings > Secret Key > click the eye
-
-  2  Stripe secret key
-     dashboard.stripe.com > Developers > API keys
-     > Secret key > Reveal test key   (sk_test_...)
-
-  3  Stripe webhook secret
-     YOU DO NOT HAVE THIS YET. Press Enter to skip it.
-
-  4  Resend API key
-     resend.com > API Keys > Create API Key
-     name: epistemend, permission: Sending access  (re_...)
-
-  5  GitHub token
-     github.com > your avatar > Settings
-     > Developer settings > Personal access tokens
-     > Fine-grained tokens > Generate new token
-     name: epistemend-runner
-     Repository access: Only select repositories > epistemend.org
-     Permissions > Repository permissions > Contents: Read and write
-
-Nothing you type is shown on screen. That is deliberate.
-------------------------------------------------------------
-PREFLIGHT
-
-printf 'Press Enter when those tabs are open. '
-read -r _
+STEP=0
 
 put() {
-  local name="$1" prompt="$2" value=""
-  printf '\n%s\n' "$prompt"
-  read -rsp "  $name: " value
+  local name="$1" where="$2" value=""
+  STEP=$((STEP + 1))
+  echo
+  echo "------------------------------------------------------------"
+  echo " $STEP of 5   $name"
+  echo "------------------------------------------------------------"
+  printf '%s\n' "$where"
+  echo
+  echo " Go and get it now. Come back, paste it below, press Enter."
+  echo " (Nothing appears as you paste. That is deliberate.)"
+  echo " (Nothing to paste yet? Just press Enter to skip.)"
+  echo
+  read -rsp "  paste $name here: " value
   echo
   if [ -z "$value" ]; then
-    echo "  skipped."
+    echo "  skipped - run this script again when you have it."
     return 0
   fi
   if printf '%s' "$value" | wrangler secret put "$name" >/dev/null 2>&1; then
-    echo "  set."
+    echo "  SET."
   else
-    echo "  FAILED. Run 'wrangler whoami' and check you are in worker/." >&2
+    echo "  FAILED - the value was not stored. Send me this line." >&2
   fi
   unset value
 }
 
-echo "============================================================"
-echo " Six secrets. Enter on an empty line skips one."
-echo "============================================================"
-
 put TURNSTILE_SECRET \
-  "Turnstile secret key — dash.cloudflare.com > Turnstile > your widget > Settings."
+" 1. Go to  dash.cloudflare.com
+ 2. Left sidebar, scroll down, click  Turnstile
+ 3. Click your widget (Site Key 0x4AAAAAAEe8cYI_dbLQ1XgY)
+ 4. Click the  Settings  tab
+ 5. Find  Secret Key  and click the eye icon to reveal it
+ 6. Select it and copy"
 
 put STRIPE_SECRET_KEY \
-  "Stripe secret key — Developers > API keys > Secret key > Reveal.
-  Use sk_test_... until you have run a test order all the way through."
+" 1. Go to  dashboard.stripe.com
+ 2. Check the  Test mode  toggle, top right, is ON
+ 3. Click  Developers  (top right)
+ 4. Click the  API keys  tab
+ 5. On the  Secret key  row, click  Reveal test key
+ 6. Copy it. It starts with  sk_test_"
 
 put STRIPE_WEBHOOK_SECRET \
-  "Stripe webhook signing secret (whsec_...) — Developers > Webhooks >
-  your endpoint > Signing secret > Reveal.
-  You will not have this until the endpoint exists. Skip it for now
-  and run this script again for just this one afterwards."
+" YOU DO NOT HAVE THIS YET, and that is expected.
+ It does not exist until the webhook endpoint is created,
+ which is the next thing you do after this script.
+
+ >>> PRESS ENTER TO SKIP THIS ONE. <<<"
 
 put RESEND_API_KEY \
-  "Resend API key (re_...) — resend.com > API Keys > Create, sending access.
-  The SAME value goes into GitHub later. Keep the tab open."
+" 1. Go to  resend.com  and sign in
+ 2. Left sidebar, click  API Keys
+ 3. Click  Create API Key
+ 4. Name it     epistemend
+ 5. Permission  Sending access
+ 6. Click  Add
+ 7. Copy it NOW - Resend shows it once. It starts with  re_
+
+ You will need this SAME value again for GitHub later, so
+ leave the tab open until the very end."
 
 put GITHUB_TOKEN \
-  "GitHub fine-grained token — github.com > Settings > Developer settings >
-  Personal access tokens > Fine-grained. Repository: epistemend.org only.
-  Permission: Contents = Read and write."
+" 1. Go to  github.com
+ 2. Click your avatar, top right, then  Settings
+ 3. Bottom of the left sidebar, click  Developer settings
+ 4. Click  Personal access tokens  then  Fine-grained tokens
+ 5. Click  Generate new token
+ 6. Token name        epistemend-runner
+ 7. Expiration        90 days
+ 8. Repository access Only select repositories -> epistemend.org
+ 9. Permissions -> Repository permissions -> Contents
+                   set the dropdown to  Read and write
+10. Scroll down, click  Generate token
+11. Copy it NOW - shown once. It starts with  github_pat_"
 
 # ── the runner key ──────────────────────────────────────────
-# Generated rather than asked for. It is a shared secret between
-# the worker and the GitHub runner and has no dashboard of its
-# own, so the two halves have to come from one place or they
-# drift -- and when they drift, paid orders queue and never run.
-RUNNER_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
-printf '\nRUNNER_KEY — generated\n'
-if printf '%s' "$RUNNER_KEY" | wrangler secret put RUNNER_KEY >/dev/null 2>&1; then
-  echo "  set on the worker."
+# Generated, not asked for. It is a shared secret between the
+# worker and the GitHub runner and has no dashboard of its own,
+# so both halves must come from one place. When they drift the
+# symptom is not an error: paid orders queue and never run, and
+# somebody has paid and is waiting.
+
+# Only ever generated ONCE. The second run of this script exists to
+# add the Stripe webhook secret, and regenerating here would quietly
+# replace the worker's half while GitHub kept the old one. The two
+# would then disagree, and disagreeing is silent: orders take payment,
+# queue, and never run.
+echo
+echo "------------------------------------------------------------"
+echo " RUNNER_KEY"
+echo "------------------------------------------------------------"
+if wrangler secret list 2>/dev/null | grep -q '"RUNNER_KEY"'; then
+  echo "  Already set on the worker. Leaving it alone."
+  echo "  If GitHub does not have the matching value, delete the"
+  echo "  secret with:  wrangler secret delete RUNNER_KEY"
+  echo "  then run this script again to make a fresh pair."
+  RUNNER_KEY=""
 else
-  echo "  FAILED to set on the worker." >&2
+  RUNNER_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+  if printf '%s' "$RUNNER_KEY" | wrangler secret put RUNNER_KEY >/dev/null 2>&1; then
+    echo "  Generated and SET on the worker."
+  else
+    echo "  FAILED to set on the worker." >&2
+  fi
 fi
 
 echo
-echo "============================================================"
-echo " What is set on the worker now:"
-wrangler secret list 2>/dev/null | sed 's/^/   /'
-echo "============================================================"
+echo "What the worker holds now:"
+wrangler secret list 2>/dev/null | sed 's/^/  /'
+
+if [ -n "$RUNNER_KEY" ]; then
+cat <<'HOWTO'
+
+============================================================
+ DO THIS NEXT, BEFORE YOU CLOSE THIS WINDOW
+============================================================
+ The key printed below is shown once and saved nowhere. Put
+ it into GitHub now, while it is on screen.
+
+  1. Go to  github.com/vince-gonzalez/epistemend.org
+  2. Click the  Settings  tab (top of the repo, far right)
+  3. Left sidebar: Secrets and variables -> Actions
+  4. Click  New repository secret
+
+     Name    RUNNER_KEY
+     Secret  the line below, copied exactly
+
+  5. Click  Add secret
+  6. Click  New repository secret  again
+
+     Name    RESEND_API_KEY
+     Secret  the same re_... you pasted earlier
+
+  7. Click  Add secret
+  8. Click  New repository secret  once more
+
+     Name    ORDERS_API
+     Secret  https://orders.epistemend.org
+
+  9. Click  Add secret
+
+ RUNNER_KEY and RESEND_API_KEY must match Cloudflare exactly.
+ If they differ, orders take payment, queue, and never run.
+============================================================
+
+HOWTO
+fi
+
+if [ -n "$RUNNER_KEY" ]; then
+  echo "RUNNER_KEY:"
+  echo
+  echo "   $RUNNER_KEY"
+  echo
+  unset RUNNER_KEY
+  printf 'Press Enter once all three GitHub secrets are saved. '
+  read -r _
+else
+  echo "No new RUNNER_KEY this run, so GitHub already has its copy."
+  echo "Nothing to paste."
+fi
 echo
-echo " Copy this into GitHub as the repository secret RUNNER_KEY."
-echo " It is shown once and is not saved anywhere:"
+echo "Done here. Next: create the Stripe webhook, then run this"
+echo "script again and paste ONLY the whsec_ value, skipping the"
+echo "rest. Then run:  wrangler deploy"
 echo
-echo "   $RUNNER_KEY"
-echo
-echo " github.com/vince-gonzalez/epistemend.org"
-echo "   Settings > Secrets and variables > Actions > New repository secret"
-echo
-echo " Three GitHub secrets in total:"
-echo "   RUNNER_KEY        the line above, exactly"
-echo "   RESEND_API_KEY    the same Resend key you just entered"
-echo "   ORDERS_API        https://orders.epistemend.org"
-echo
-unset RUNNER_KEY
