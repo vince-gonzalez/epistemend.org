@@ -228,9 +228,25 @@ async function turnstileOk(env, token, ip) {
     return false;
   }
 
-  return out.success === true &&
-         out.action === 'order' &&
-         allowed.has(out.hostname);
+  /* Say why, in the log. The browser still gets one flat refusal -- a
+     rejection that explains itself to the client explains itself to
+     whoever is probing it. But refusing with the reason discarded is
+     how an afternoon goes: the check states its objection and nobody
+     is listening. Visible with: wrangler tail */
+  const ok = out.success === true &&
+             out.action === 'order' &&
+             allowed.has(out.hostname);
+  if (!ok) {
+    console.log('turnstile refused', JSON.stringify({
+      success: out.success,
+      errors: out['error-codes'] || [],
+      action_seen: out.action,
+      action_wanted: 'order',
+      hostname_seen: out.hostname,
+      hostnames_allowed: Array.from(allowed)
+    }));
+  }
+  return ok;
 }
 
 /* ── an order arrives ────────────────────────────────────── */
@@ -559,6 +575,7 @@ export default {
       }
       if (url.pathname === '/api/status') { return await status(request, env); }
       if (url.pathname === '/api/report') { return await report(request, env); }
+
       if (url.pathname === '/api/runner/pending') {
         return await runnerPending(request, env);
       }
