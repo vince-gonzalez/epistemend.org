@@ -151,7 +151,16 @@ async function mail(env, to, subject, lines) {
       text: lines.join('\n')
     })
   });
-  return r.ok;
+  if (!r.ok) {
+    /* Resend refuses for reasons that are not outages: an unverified
+       domain, a suppressed address, a rate limit. Each returns a body
+       saying which. Discarding it is how "the customer never got the
+       email" becomes unanswerable. */
+    let why = '';
+    try { why = (await r.text()).slice(0, 300); } catch (e) { }
+    return { ok: false, status: r.status, why: why };
+  }
+  return { ok: true, status: r.status, why: '' };
 }
 
 /* ── the runner ──────────────────────────────────────────── */
@@ -375,7 +384,7 @@ async function stripeHook(request, env) {
   const woke = await wakeRunner(env, jobId);
 
   const named = SKUS[order.sku] ? SKUS[order.sku].name : order.sku;
-  await mail(env, order.email, 'Your ' + named + ' is under way', [
+  const sent = await mail(env, order.email, 'Your ' + named + ' is under way', [
     'Thank you — the payment went through and the check has started.',
     '',
     'Ordered   ' + named,
@@ -390,6 +399,11 @@ async function stripeHook(request, env) {
     '— Epistemend',
     'www.epistemend.org'
   ]);
+  /* Written down either way. A confirmation that silently failed to send
+     is indistinguishable from one that was never attempted, and the
+     customer has paid by this point. */
+  await note(env, jobId, sent.ok ? 'confirmation mailed' : 'confirmation FAILED',
+             sent.ok ? order.email : (sent.status + ' ' + sent.why));
 
   return json({ ok: true, job: jobId });
 }
@@ -489,7 +503,7 @@ async function runnerFinish(request, env) {
           "UPDATE orders SET status = 'refunded' WHERE id = ?"
         ).bind(order.id).run();
 
-        await mail(env, order.email, 'Your Epistemend order has been refunded', [
+        const refundMail = await mail(env, order.email, 'Your Epistemend order has been refunded', [
           'The check you ordered could not be completed, so the charge has',
           'been reversed in full. Nothing is owed and nothing is outstanding.',
           '',
@@ -507,6 +521,10 @@ async function runnerFinish(request, env) {
           '— Epistemend',
           'www.epistemend.org'
         ]);
+        await note(env, job.id,
+                   refundMail.ok ? 'refund mailed' : 'refund mail FAILED',
+                   refundMail.ok ? order.email
+                                 : (refundMail.status + ' ' + refundMail.why));
       }
     } catch (err) {
     }
@@ -514,7 +532,7 @@ async function runnerFinish(request, env) {
     /* The operator hears about it either way, because a refund that failed
        is money that stayed taken. */
     if (env.OPERATOR_EMAIL) {
-      await mail(env, env.OPERATOR_EMAIL, 'A job needs attention: ' + job.id, [
+      const opMail = await mail(env, env.OPERATOR_EMAIL, 'A job needs attention: ' + job.id, [
         'Job     ' + job.id,
         'Order   ' + job.order_id,
         'Attempts ' + job.attempts,
