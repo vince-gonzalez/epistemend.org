@@ -200,6 +200,7 @@ async function note(env, jobId, event, detail) {
   site, not this worker. localhost is never in the deployed list.
 */
 async function turnstileOk(env, token, ip) {
+
   if (typeof token !== 'string' || !token || token.length > 2048) {
     return false;
   }
@@ -207,7 +208,9 @@ async function turnstileOk(env, token, ip) {
     String(env.TURNSTILE_HOSTNAMES || '')
       .split(',').map((h) => h.trim()).filter(Boolean)
   );
-  if (!env.TURNSTILE_SECRET || allowed.size === 0) { return false; }
+  if (!env.TURNSTILE_SECRET || allowed.size === 0) {
+    return false;
+  }
 
   let out;
   try {
@@ -284,8 +287,14 @@ async function checkout(request, env) {
     if (!ORCID.test(first) && payload.length < 6) {
       return bad('Name the author to sweep, by ORCID or by name');
     }
-  } else if (payload.length < 24) {
-    return bad('There is nothing here to check');
+  } else if (payload.length <= 24) {
+    /* The engine keeps reference blocks of length > 24 and discards the
+       rest. This gate said >= 24. A payload of exactly 24 characters
+       therefore cleared the gate, was charged for, and was thrown away
+       before anything was looked up. The two numbers have to agree, and
+       the engine's is the one that decides. */
+    return bad('That is too short to be a reference. A reference needs '
+             + 'author, year and title at least.');
   }
   if (payload.length > 200000) {
     return bad('That is larger than a single document; send it in parts');
@@ -322,9 +331,11 @@ async function checkout(request, env) {
 
 async function stripeHook(request, env) {
   const raw = await request.text();
-  const ok = await verifyStripe(env, raw,
-    request.headers.get('Stripe-Signature'));
-  if (!ok) { return bad('Signature did not verify', 400); }
+  const sig = request.headers.get('Stripe-Signature');
+  const ok = await verifyStripe(env, raw, sig);
+  if (!ok) {
+    return bad('Signature did not verify', 400);
+  }
 
   const event = JSON.parse(raw);
 
@@ -360,11 +371,8 @@ async function stripeHook(request, env) {
     `INSERT INTO jobs (id, order_id, status, token, created_at)
      VALUES (?, ?, 'queued', ?, ?)`
   ).bind(jobId, orderId, token, now()).run();
-  await note(env, jobId, 'queued', order.sku);
 
   const woke = await wakeRunner(env, jobId);
-  await note(env, jobId, woke ? 'runner woken' : 'runner not reachable',
-             woke ? null : 'the schedule will pick it up');
 
   const named = SKUS[order.sku] ? SKUS[order.sku].name : order.sku;
   await mail(env, order.email, 'Your ' + named + ' is under way', [
@@ -442,7 +450,6 @@ async function runnerClaim(request, env) {
     `UPDATE jobs SET status = 'running', attempts = attempts + 1,
      started_at = ? WHERE id = ?`
   ).bind(now(), job.id).run();
-  await note(env, job.id, 'started', 'attempt ' + (job.attempts + 1));
 
   return json({
     job: job.id, sku: job.sku, email: job.email,
@@ -464,11 +471,8 @@ async function runnerFinish(request, env) {
       `UPDATE jobs SET status = 'complete', result = ?, finished_at = ?
        WHERE id = ?`
     ).bind(JSON.stringify(body.result || {}), now(), job.id).run();
-    await note(env, job.id, 'complete', null);
     return json({ ok: true, report: SITE + '/r/#' + job.token });
   }
-
-  await note(env, job.id, 'failed', body.error);
 
   /* A sweep that could not be completed is not a sweep that gets billed. */
   if (job.attempts >= MAX_ATTEMPTS) {
@@ -484,7 +488,6 @@ async function runnerFinish(request, env) {
         await env.DB.prepare(
           "UPDATE orders SET status = 'refunded' WHERE id = ?"
         ).bind(order.id).run();
-        await note(env, job.id, 'refunded', null);
 
         await mail(env, order.email, 'Your Epistemend order has been refunded', [
           'The check you ordered could not be completed, so the charge has',
@@ -506,7 +509,6 @@ async function runnerFinish(request, env) {
         ]);
       }
     } catch (err) {
-      await note(env, job.id, 'refund failed', err.message);
     }
 
     /* The operator hears about it either way, because a refund that failed

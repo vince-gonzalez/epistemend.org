@@ -61,6 +61,21 @@ def send(to, subject, lines):
 def do_reference_check(payload):
     from authorecon import reference_check as rc
     rows = rc.run(payload, log=lambda m: print(m, file=sys.stderr))
+    # An empty report is not a report, and it must never be delivered as a
+    # finished one. This shipped: a 24-character payload cleared the
+    # worker's floor of >= 24 and was discarded by the splitter, which
+    # keeps blocks of > 24. The order was charged, the job completed, and
+    # the customer received a document containing nothing.
+    #
+    # Raising here puts the job on the failure path, which stops after
+    # three attempts and refunds. Work that cannot be done is not work
+    # that gets billed.
+    if not rows:
+        raise ValueError(
+            "No references could be read from that text. A reference needs "
+            "enough of itself to look one up - author, year and title at "
+            "least. Nothing has been charged for this."
+        )
     counts = {}
     for r in rows:
         counts[r["state"]] = counts.get(r["state"], 0) + 1

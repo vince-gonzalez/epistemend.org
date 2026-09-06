@@ -285,13 +285,14 @@ function submit(e) {
       return fail('Give the author to sweep: an ORCID like '
                 + '0000-0002-1825-0097, or their published name.');
     }
-  } else if (payload.length < 24) {
+  } else if (payload.length <= 24) {
     if (ORCID.test(firstWord)) {
       return fail('That is an ORCID, and this is the reference check, '
                 + 'which reads a bibliography. To sweep an author by '
                 + 'ORCID, choose Record Report above.');
     }
-    return fail('Paste the reference list to check.');
+    return fail('That is too short to be a reference. One needs author, '
+              + 'year and title at least, or it cannot be looked up.');
   }
 
   STATE.sending = true;
