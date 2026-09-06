@@ -267,14 +267,37 @@ function paintReferenceCheck(r) {
       box.appendChild(el('span', 'state', row.state || 'unknown'));
       box.appendChild(el('p', 'ref', row.ref || ''));
       if (row.says) { box.appendChild(el('p', 'says', row.says)); }
+      /* Show the whole record that was found, not just its title.
+         The DOI is the most useful line in a reference check -- when a
+         reference carries no identifier, the resolved DOI is the thing
+         you paste back into your bibliography. It was in the data and
+         this page dropped it, which made a genuine lookup read as an
+         echo of the input. */
       var found = row.found;
       if (found && found.title) {
         box.appendChild(el('p', 'found',
           'index says: ' + found.title +
           (found.year ? ' (' + found.year + ')' : '')));
+        if (found.venue) {
+          box.appendChild(el('p', 'found', 'published in: ' + found.venue));
+        }
+        if (found.doi) {
+          var d = el('p', 'found');
+          d.appendChild(document.createTextNode('doi: '));
+          var a = el('a', null, found.doi);
+          a.href = 'https://doi.org/' + found.doi;
+          a.rel = 'noopener noreferrer';
+          a.target = '_blank';
+          d.appendChild(a);
+          box.appendChild(d);
+        }
+        if (found.source) {
+          box.appendChild(el('p', 'found',
+            'according to: ' + found.source));
+        }
       }
       if (row.given) {
-        box.appendChild(el('p', 'found', 'given: ' + row.given));
+        box.appendChild(el('p', 'found', 'you gave: ' + row.given));
       }
       m.appendChild(box);
     });
