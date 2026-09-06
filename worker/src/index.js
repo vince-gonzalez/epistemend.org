@@ -447,6 +447,56 @@ async function report(request, env) {
   return json({ finished: job.finished_at, result: JSON.parse(job.result) });
 }
 
+/* ── erasure ─────────────────────────────────────────────── */
+
+/*
+  A report has to be removable by the person who bought it, or the
+  retention notice cannot be honoured and Article 17 has no mechanism
+  behind it.
+
+  Two things are required, not one. The token alone is read access, and
+  a report is meant to be forwarded -- so token-only deletion would let
+  any recipient destroy the purchaser's copy. The email that placed the
+  order is the second factor, compared case-insensitively because people
+  type their own address in whatever case they please.
+*/
+async function forget(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return bad('Unreadable request'); }
+
+  const token = String((body && body.token) || '').trim();
+  const email = String((body && body.email) || '').trim().toLowerCase();
+  if (!token || !email) {
+    return bad('Give the report address and the email that ordered it');
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT j.id AS job_id, o.id AS order_id, lower(o.email) AS email
+     FROM jobs j JOIN orders o ON o.id = j.order_id
+     WHERE j.token = ?`
+  ).bind(token).first();
+
+  /* Same answer whether the report does not exist or the email does not
+     match, so this cannot be used to discover which reports exist. */
+  if (!row || row.email !== email) {
+    return json({ ok: true, removed: false,
+                  note: 'If a report matches those details it has been removed.' });
+  }
+
+  await env.DB.prepare(
+    "UPDATE jobs SET result = NULL, status = 'erased' WHERE id = ?"
+  ).bind(row.job_id).run();
+  await env.DB.prepare(
+    "UPDATE orders SET payload = '' WHERE id = ?"
+  ).bind(row.order_id).run();
+  await note(env, row.job_id, 'erased at the purchaser request', null);
+
+  return json({ ok: true, removed: true,
+                note: 'The report and its contents have been removed. The '
+                    + 'record that an order was placed is kept for tax and '
+                    + 'chargeback purposes and holds no report content.' });
+}
+
 /* ── the runner talks back ───────────────────────────────── */
 
 async function runnerClaim(request, env) {
@@ -485,6 +535,20 @@ async function runnerFinish(request, env) {
       `UPDATE jobs SET status = 'complete', result = ?, finished_at = ?
        WHERE id = ?`
     ).bind(JSON.stringify(body.result || {}), now(), job.id).run();
+
+    /* The submitted list is discarded the moment the report exists.
+       The order page tells the purchaser it is not kept, and until now
+       it was kept -- every payload still sat in the orders table hours
+       after delivery. A sentence on a page taking card payments is a
+       representation, not a sentiment.
+       What remains is the report itself, at the customer's own address,
+       which is the thing they bought. That is a different retention with
+       a different reason and the notice says so separately. */
+    await env.DB.prepare(
+      "UPDATE orders SET payload = '' WHERE id = ?"
+    ).bind(job.order_id).run();
+    await note(env, job.id, 'submitted list discarded', null);
+
     return json({ ok: true, report: SITE + '/r/#' + job.token });
   }
 
@@ -595,6 +659,9 @@ export default {
       }
       if (url.pathname === '/api/status') { return await status(request, env); }
       if (url.pathname === '/api/report') { return await report(request, env); }
+      if (url.pathname === '/api/forget' && request.method === 'POST') {
+        return await forget(request, env);
+      }
 
       if (url.pathname === '/api/runner/pending') {
         return await runnerPending(request, env);

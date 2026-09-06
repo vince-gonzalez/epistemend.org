@@ -130,8 +130,9 @@ footer p{margin:5px 0}
     <label class="field" for="payload" id="payloadLabel">The reference list</label>
     <textarea id="payload" spellcheck="false"
       placeholder="Paste the bibliography. Any style; numbered, blank-line separated or one per line."></textarea>
-    <div class="note" id="payloadNote">Any citation style. The list is used
-    for this check and is not kept after the report is delivered.</div>
+    <div class="note" id="payloadNote">Any citation style. Your list is used for this check and discarded the
+      moment the report is delivered. The report itself stays at its own
+      address until you ask for it to be removed.</div>
 
     <!-- The id is NOT "turnstile". An element id becomes a global, so
          id="turnstile" made window.turnstile the div itself; api.js saw
@@ -184,7 +185,8 @@ var COPY = {
   'reference-check': {
     label: 'The reference list',
     hint: 'Any citation style. The list is used for this check and is not '
-        + 'kept after the report is delivered.',
+        + 'discarded the moment the report is delivered. The report itself '
+        + 'stays at its own address until you ask for it to be removed.',
     placeholder: 'Paste the bibliography. Any style; numbered, blank-line '
                + 'separated or one per line.'
   },
