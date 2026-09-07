@@ -282,7 +282,7 @@ var STARTERS = [
   /^[—–-]{2,}/,                               /* ---  a repeated author     */
   /^[A-Z][A-Za-z'’-]+,\s*[A-Z]/,              /* Shannon, C. E.             */
   /^[A-Z][A-Za-z'’-]+\s+[A-Z]{1,4}[.,;]/,     /* Shannon CE.                */
-  /^[A-Z][^.]{2,70}\.?\s*\(\d{4}[a-z]?\)/     /* Centre for Disease... (2021) */
+  /^[A-Z][^.]{2,70}\.?\s*\(\d{4}[a-z]?\)/     /* Center for Disease... (2021) */
 ];
 
 /* A reference that has ended closes its sentence. One that has not is still
@@ -396,7 +396,7 @@ function findArxiv(ref) {
 
 /* ── comparing a record to the reference that named it ──── */
 
-function normalise(text) {
+function normalize(text) {
   var box = document.createElement('textarea');
   box.innerHTML = String(text == null ? '' : text).replace(/<[^>]+>/g, ' ');
   return box.value.normalize('NFKD')
@@ -413,7 +413,7 @@ function normalise(text) {
   reported as a work that could not be found.
 */
 function skeleton(text) {
-  return normalise(text).replace(/[^\p{L}\p{N}]/gu, '');
+  return normalize(text).replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 var SCRIPTS = [

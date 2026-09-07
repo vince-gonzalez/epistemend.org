@@ -32,7 +32,7 @@ if [ ! -f wrangler.toml ]; then
   exit 1
 fi
 
-normalise() {
+normalize() {
   printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | tr -cd '0-9X' |
     sed -E 's/^(.{4})(.{4})(.{4})(.{4})$/\1-\2-\3-\4/'
 }
@@ -43,7 +43,7 @@ note="${3:-}"
 
 case "$action" in
   add)
-    orcid="$(normalise "$raw")"
+    orcid="$(normalize "$raw")"
     if [ ${#orcid} -ne 19 ]; then
       echo "That is not an ORCID: '$raw'" >&2; exit 1
     fi
@@ -63,7 +63,7 @@ case "$action" in
     ;;
 
   lift)
-    orcid="$(normalise "$raw")"
+    orcid="$(normalize "$raw")"
     if [ ${#orcid} -ne 19 ]; then
       echo "That is not an ORCID: '$raw'" >&2; exit 1
     fi

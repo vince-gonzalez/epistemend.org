@@ -169,7 +169,7 @@ footer p{margin:5px 0}
         report, and Epistemend is not a consumer reporting agency.</p>
         <p>I am responsible for how I use what this report contains, and
         for any consequence of that use. If I am ordering for an
-        organisation, I have authority to bind it.</p>
+        organization, I have authority to bind it.</p>
       </div>
 
     <div id="turnstile-box" class="turnstile cf-turnstile"
@@ -436,8 +436,8 @@ function wire() {
 }());
 
   el('form').addEventListener('submit', submit);
-  if (/[?&]cancelled=1/.test(location.search)) {
-    fail('The payment was cancelled and nothing was charged. The form still '
+  if (/[?&]canceled=1/.test(location.search)) {
+    fail('The payment was canceled and nothing was charged. The form still '
        + 'has what you entered.');
   }
 }

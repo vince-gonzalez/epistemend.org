@@ -334,7 +334,7 @@ function sleep(ms) {
   it turns "the server was busy" into a statement about the author's record,
   which is the one failure this whole tool exists to avoid. So a busy
   response is retried, and if it still will not answer it is raised as
-  something the caller can recognise and count separately.
+  something the caller can recognize and count separately.
 */
 function get(url, accept, attempt) {
   attempt = attempt || 0;
@@ -1092,7 +1092,7 @@ function lint(md) {
   var lic = md.license;
   var licId = (lic && typeof lic === 'object') ? lic.id : lic;
   if (!licId) {
-    fail.push('no licence, so nobody may legally reuse it');
+    fail.push('no license, so nobody may legally reuse it');
   }
 
   var kinds = {};
@@ -1193,7 +1193,7 @@ function unescapeHtml(text) {
    stores plain; ligatures and smart punctuation, because a PDF extractor
    makes them and a form field does not; line wrapping, because it is not a
    difference in what was said. */
-function normalise(text) {
+function normalize(text) {
   if (!text) { return ''; }
   var t = unescapeHtml(String(text));
   t = t.replace(/<[^>]+>/g, ' ');
@@ -1292,8 +1292,8 @@ RUN.abstracts = function () {
           var theirs = abstractFrom(indexed);
           if (!theirs) { return; }
           compared++;
-          var ratio = similarity(skeleton(normalise(theirs)),
-                                 skeleton(normalise(deposited)));
+          var ratio = similarity(skeleton(normalize(theirs)),
+                                 skeleton(normalize(deposited)));
           if (ratio < DIVERGENT) {
             diverged++;
             if (examples.length < 4) {

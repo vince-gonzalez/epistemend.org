@@ -395,7 +395,7 @@ async function checkout(request, env) {
     client_reference_id: orderId,
     'metadata[order_id]': orderId,
     success_url: SITE + '/order/thanks/?order=' + orderId,
-    cancel_url: SITE + '/order/?cancelled=1'
+    cancel_url: SITE + '/order/?canceled=1'
   });
 
   await env.DB.prepare('UPDATE orders SET stripe_session = ? WHERE id = ?')

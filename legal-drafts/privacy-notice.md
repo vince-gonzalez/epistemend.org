@@ -88,7 +88,7 @@ neither seek it nor report it.
 ### Lawful basis, and the balance we struck
 
 Our basis is **Article 6(1)(f)**, legitimate interests. The interest is
-the accuracy of the public scholarly record, which is a recognised
+the accuracy of the public scholarly record, which is a recognized
 interest and is served by identifying where records disagree.
 
 We consider this proportionate because the data is already published by

@@ -61,10 +61,10 @@ being answered is inherently about an identified person's record.
   who bought it, and erasable on request.
 - We do not enrich from private sources, social media, or any non-scholarly
   index.
-- We do not infer. Nothing is scored, ranked, or characterised; the report
+- We do not infer. Nothing is scored, ranked, or characterized; the report
   states what each index says and attributes it.
 
-**Conclusion:** necessary, and already minimised.
+**Conclusion:** necessary, and already minimized.
 
 ---
 
@@ -104,7 +104,7 @@ to a single purchaser. It is not published, indexed, or broadcast.
 | Risk | Mitigation |
 |---|---|
 | Report used in a hiring, tenure or credit decision | Expressly prohibited in the required pre-order attestation, in terms tracking the statutory purposes. Not a consumer report; we are not a consumer reporting agency. |
-| "Retracted" read as an imputation of misconduct | Findings state what the index records and the stated grounds. The product must never characterise a retraction as misconduct. **This is an architectural invariant, not a style preference.** |
+| "Retracted" read as an imputation of misconduct | Findings state what the index records and the stated grounds. The product must never characterize a retraction as misconduct. **This is an architectural invariant, not a style preference.** |
 | An index is wrong, and the report repeats it | The report asserts what the index records, not what is true of the person, and names the index so it can be checked and corrected at source. Rectification requests are answered with the index and the route to correct it. |
 | A report is forwarded beyond its purchaser | Reachable only by a 128-bit token. The customer is told plainly that anyone holding the address can read it. |
 | Indefinite retention | Discarded list; erasable report; monitoring snapshot deleted when the subscription ends or an objection is received. |
@@ -115,7 +115,7 @@ to a single purchaser. It is not published, indexed, or broadcast.
   persistent suppression list so an objection does not lapse.
 - **This assessment and the privacy notice are published**, which is both
   a safeguard and the precondition of the Article 14(5)(b) exemption.
-- **Data minimisation applied and verified**, not merely intended: the
+- **Data minimization applied and verified**, not merely intended: the
   submitted list is destroyed on delivery; the event log records that an
   email was sent rather than the address; a diagnostic table holding no
   useful purpose was dropped.
@@ -130,7 +130,7 @@ to a single purchaser. It is not published, indexed, or broadcast.
 ## 4. Conclusion
 
 The interest is legitimate and real. The processing is necessary to it and
-has been minimised as far as the purpose allows. The data is professional
+has been minimized as far as the purpose allows. The data is professional
 and already public; the impact in the ordinary case is low; and the two
 places where impact could be material — use in employment-type decisions,
 and the implication carried by the word "retracted" — are addressed by a
@@ -144,7 +144,7 @@ the following occurs:
 
 - a standing database of subjects is retained rather than read at run time;
 - any non-scholarly or private source is added;
-- the product begins to score, rank, or characterise rather than report;
+- the product begins to score, rank, or characterize rather than report;
 - reports become public rather than delivered to a single purchaser;
 - the use restriction is removed or ceases to be enforced.
 
