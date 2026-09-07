@@ -422,8 +422,12 @@ async function stripeHook(request, env) {
   /* Written down either way. A confirmation that silently failed to send
      is indistinguishable from one that was never attempted, and the
      customer has paid by this point. */
+  /* Records THAT it was mailed, not the address. The order row already
+     holds the address; a second copy in a diagnostic log is personal data
+     kept for no reason, and the log is the part most likely to be read
+     by somebody who had no business seeing it. */
   await note(env, jobId, sent.ok ? 'confirmation mailed' : 'confirmation FAILED',
-             sent.ok ? order.email : (sent.status + ' ' + sent.why));
+             sent.ok ? null : (sent.status + ' ' + sent.why));
 
   return json({ ok: true, job: jobId });
 }
@@ -607,7 +611,7 @@ async function runnerFinish(request, env) {
         ]);
         await note(env, job.id,
                    refundMail.ok ? 'refund mailed' : 'refund mail FAILED',
-                   refundMail.ok ? order.email
+                   refundMail.ok ? null
                                  : (refundMail.status + ' ' + refundMail.why));
       }
     } catch (err) {
