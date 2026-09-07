@@ -31,6 +31,11 @@
    No dependencies.
    ============================================================ */
 
+/* The Terms will change. "They agreed to the Terms" is unfalsifiable
+   unless the record says WHICH Terms, so every order stores this and it
+   is bumped whenever the wording changes. */
+const TERMS_VERSION = '2026-09-07';
+
 const SKUS = {
   'reference-check': {
     amount: 1900,
@@ -275,6 +280,19 @@ async function checkout(request, env) {
     return bad('That check did not pass. Reload the page and try again.', 403);
   }
 
+  /* Enforced here, not only on the page. A checkbox the server does not
+
+     check is a decoration anyone can post around, and the whole point
+
+     of it is to be evidence. */
+
+  if (body.agreed !== true) {
+
+    return bad('The order cannot be placed without agreeing to the terms');
+
+  }
+
+
   const sku = SKUS[body.sku];
   if (!sku) { return bad('Unknown product'); }
 
@@ -312,9 +330,11 @@ async function checkout(request, env) {
   const orderId = id('ord_');
   await env.DB.prepare(
     `INSERT INTO orders (id, sku, email, payload, amount_cents, status,
-                         created_at)
-     VALUES (?, ?, ?, ?, ?, 'pending_payment', ?)`
-  ).bind(orderId, body.sku, email, payload, sku.amount, now()).run();
+                         created_at, agreed_at, agreed_ip, terms_version)
+     VALUES (?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?, ?)`
+  ).bind(orderId, body.sku, email, payload, sku.amount, now(),
+         now(), request.headers.get('CF-Connecting-IP') || '',
+         TERMS_VERSION).run();
 
   const session = await stripe(env, 'checkout/sessions', {
     mode: 'payment',

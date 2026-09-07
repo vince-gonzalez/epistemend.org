@@ -69,6 +69,15 @@ button:hover:not(:disabled){filter:brightness(1.08)}
 button:disabled{opacity:.5;cursor:default}
 .secure{font-size:13.5px;color:var(--faint)}
 .turnstile{margin:22px 0 4px;min-height:65px}
+.agree{background:var(--panel2);border:1px solid var(--line2);
+  border-radius:8px;padding:18px 20px;margin:24px 0 4px}
+.agree label{display:flex;gap:12px;align-items:flex-start;cursor:pointer;
+  font-size:15px;line-height:1.55;color:var(--ink)}
+.agree input[type=checkbox]{width:20px;height:20px;flex:0 0 20px;
+  margin-top:2px;cursor:pointer;accent-color:var(--accent)}
+.agree p{font-size:14px;color:var(--dim);margin:12px 0 0;padding-left:32px}
+.agree .never{color:var(--ink);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
 .err{margin-top:16px;font-size:15px;color:var(--bad)}
 
 .terms{border-top:1px solid var(--line);margin-top:44px;padding:28px 0 0;
@@ -139,6 +148,25 @@ footer p{margin:5px 0}
          its own namespace already occupied and never installed render,
          getResponse or reset. The widget never appeared and the submit
          handler threw on a div. Do not name it after the library. -->
+      <div class="agree">
+        <label for="agree">
+          <input type="checkbox" id="agree">
+          <span>I have read and agree to the <a href="/terms/">Terms of
+          Service</a> and <a href="/privacy/">Privacy Notice</a>.</span>
+        </label>
+        <p>I am ordering for a lawful purpose &mdash; research, scholarship,
+        editorial work or peer review, journalism, history, creative or
+        authorial work, due diligence, or keeping my own records. That list
+        is illustrative, not exhaustive.</p>
+        <p><span class="never">I will not use this report, in whole or in
+        part, as a factor in any decision about employment, credit,
+        insurance, housing, or tenancy.</span> This report is not a consumer
+        report, and Epistemend is not a consumer reporting agency.</p>
+        <p>I am responsible for how I use what this report contains, and I
+        agree to the indemnity in the Terms. If I am ordering for an
+        organisation, I have authority to bind it.</p>
+      </div>
+
     <div id="turnstile-box" class="turnstile cf-turnstile"
            data-sitekey="0x4AAAAAAEe8cYI_dbLQ1XgY"
            data-action="order"
@@ -147,7 +175,7 @@ footer p{margin:5px 0}
            data-error-callback="onTurnstileError"></div>
 
     <div class="act">
-      <button type="submit" id="go">Continue to payment</button>
+      <button type="submit" id="go" disabled>Continue to payment</button>
       <span class="secure">Payment is handled by Stripe. Card details never
       reach this site.</span>
       <span class="secure" id="say" role="status" aria-live="polite"></span>
@@ -295,8 +323,24 @@ function submit(e) {
               + 'year and title at least, or it cannot be looked up.');
   }
 
+  /* Checked before anything is marked in flight. Refusing after
+
+     STATE.sending is set would leave the button disabled with no
+
+     way back. */
+
+  var agreeBox = el('agree');
+
+  if (!agreeBox || !agreeBox.checked) {
+
+    return fail('Please confirm the statement above before ordering.');
+
+  }
+
+
   STATE.sending = true;
-  el('go').disabled = true;
+
+  syncGo();
   el('go').textContent = 'Opening payment...';
   el('say').textContent = 'Opening the payment page.';
 
@@ -306,7 +350,7 @@ function submit(e) {
 
     STATE.sending = false;
 
-    el('go').disabled = false;
+    syncGo();
 
     el('go').textContent = 'Continue to payment';
 
@@ -331,7 +375,7 @@ function submit(e) {
 
     headers: { 'Content-Type': 'application/json' },
 
-    body: JSON.stringify({ sku: sku, email: email,
+    body: JSON.stringify({ agreed: true, sku: sku, email: email,
 
                            payload: payload,
 
@@ -349,10 +393,19 @@ function submit(e) {
       resetTurnstile();
       fail(err.message + ' Nothing has been charged.');
       STATE.sending = false;
-      el('go').disabled = false;
+      syncGo();
       el('go').textContent = 'Continue to payment';
       el('say').textContent = '';
     });
+}
+
+/* One place decides whether the button is live, because two places
+   disagreeing is how a disabled control comes back enabled. The submit
+   path re-enables on failure; it must not re-enable past an unticked
+   box. */
+function syncGo() {
+  var box = el('agree');
+  el('go').disabled = STATE.sending || !(box && box.checked);
 }
 
 function fail(message) {
@@ -366,6 +419,17 @@ function wire() {
     function (p) {
       p.addEventListener('click', function () { choose(p.dataset.sku); });
     });
+
+/* Unticked on load, and on a back-navigation restore, where browsers
+   helpfully repopulate form state. */
+(function () {
+  var box = el('agree');
+  if (!box) { return; }
+  box.checked = false;
+  box.addEventListener('change', syncGo);
+  syncGo();
+}());
+
   el('form').addEventListener('submit', submit);
   if (/[?&]cancelled=1/.test(location.search)) {
     fail('The payment was cancelled and nothing was charged. The form still '
