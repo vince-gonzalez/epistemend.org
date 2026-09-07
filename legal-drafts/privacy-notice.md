@@ -123,9 +123,17 @@ in which we hold data about a subject over time. See "Monitoring" below.
 You may:
 
 - **Object** to this processing under Article 21. An objection to
-  processing based on legitimate interests requires no reason to be given.
-  We will stop, and we maintain a suppression list so that an objection
-  persists rather than lapsing at the next request.
+  processing based on legitimate interests requires no reason to be given,
+  and we ask for none. We hold a standing list of objections, so an
+  objection persists rather than lapsing at the next request: no report
+  about you can be ordered, and any monitoring of you stops and its stored
+  snapshot is deleted. We will ask enough to satisfy ourselves the request
+  comes from you, since otherwise anyone could silence anyone.
+
+  This does not stop your published work appearing in a bibliography that
+  somebody else submits for a reference check. That check is about their
+  documents rather than about you, and Article 21 protects against
+  processing, not against being cited.
 - **Access** what we hold about you (Article 15).
 - **Rectify** it (Article 16) — though note that where a report is
   inaccurate because an *index* is inaccurate, the correction has to be

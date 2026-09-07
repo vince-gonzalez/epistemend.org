@@ -266,6 +266,43 @@ async function turnstileOk(env, token, ip) {
   return ok;
 }
 
+/* ── objections ──────────────────────────────────────────── */
+
+/*
+  Article 21 gives a person an unconditional right to object to
+  processing carried out on legitimate interests, and requires no reason
+  from them. The privacy notice promises the objection persists rather
+  than lapsing at the next request, and this is the table that makes that
+  true rather than aspirational.
+
+  Scope, deliberately: an objection stops a report ABOUT that person. It
+  does not stop their published work appearing in a bibliography somebody
+  else submits for a reference check. That data arrives in the customer's
+  own document and from the indexes, the report is about the documents
+  rather than the person, and blocking it would be both impossible and
+  disproportionate. Article 21 protects against processing, not against
+  being cited.
+
+  Checked BEFORE the order row is written and before Stripe is called.
+  Taking the money and refunding it afterwards would mean processing the
+  objection had already forbidden.
+*/
+
+function normaliseOrcid(text) {
+  const bare = String(text || '').toUpperCase().replace(/[^0-9X]/g, '');
+  if (bare.length !== 16) { return ''; }
+  return bare.slice(0, 4) + '-' + bare.slice(4, 8) + '-' +
+         bare.slice(8, 12) + '-' + bare.slice(12);
+}
+
+async function isSuppressed(env, orcid) {
+  if (!orcid) { return false; }
+  const row = await env.DB.prepare(
+    'SELECT orcid FROM suppressions WHERE orcid = ?'
+  ).bind(orcid).first();
+  return !!row;
+}
+
 /* ── an order arrives ────────────────────────────────────── */
 
 async function checkout(request, env) {
@@ -325,6 +362,17 @@ async function checkout(request, env) {
   }
   if (payload.length > 200000) {
     return bad('That is larger than a single document; send it in parts');
+  }
+
+  /* An objection on file stops a report about that person, before an
+     order exists and before a payment is opened. */
+  if (body.sku === 'record-report') {
+    const subject = normaliseOrcid(payload.split(/\s+/)[0] || '');
+    if (subject && await isSuppressed(env, subject)) {
+      return bad('That researcher has asked not to be the subject of '
+               + 'these reports, and we have agreed. Nothing has been '
+               + 'charged.', 451);
+    }
   }
 
   const orderId = id('ord_');
@@ -533,6 +581,25 @@ async function runnerClaim(request, env) {
   if (!job) { return bad('No such job', 404); }
   if (job.status === 'complete') { return bad('Already finished', 409); }
   if (job.attempts >= MAX_ATTEMPTS) { return bad('Given up on this one', 409); }
+
+  /* An objection can arrive between paying and running -- the gap is
+     seconds to minutes, but it is the gap in which a person exercises
+     a right. Checked again here, and the order is refunded rather than
+     fulfilled, because the alternative is completing processing that
+     has already been objected to. */
+  if (job.sku === 'record-report') {
+    const subject = normaliseOrcid(String(job.payload || '').split(/\s+/)[0] || '');
+    if (subject && await isSuppressed(env, subject)) {
+      await env.DB.prepare(
+        "UPDATE jobs SET status = 'needs_attention', finished_at = ? WHERE id = ?"
+      ).bind(now(), job.id).run();
+      await env.DB.prepare(
+        "UPDATE orders SET payload = '' WHERE id = ?"
+      ).bind(job.order_id).run();
+      await note(env, job.id, 'stopped: objection on file', null);
+      return bad('That subject has objected; this job will not run', 451);
+    }
+  }
 
   await env.DB.prepare(
     `UPDATE jobs SET status = 'running', attempts = attempts + 1,
