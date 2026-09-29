@@ -492,6 +492,10 @@ function agreement(title, ref) {
      carry a colon and eight more words after it. Whichever reading agrees
      more is the one that stands.
   */
+  /* A publisher's "RETRACTED:" in front of a title cost the retracted
+     Wakefield paper its match: it scored below a same-title letter printed
+     five months later, the letter won, and the retraction went unreported. */
+  title = String(title || '').replace(RETRACTION_PREFIX, '');
   var best = runRatio(title, ref);
   var main = String(title || '').split(/[:;]|\s[-–—]\s/)[0].trim();
   if (main && main !== title && skeleton(main).length >= 12) {
@@ -509,6 +513,7 @@ function agreement(title, ref) {
 */
 var AGREES = 0.7;
 var DIFFERS = 0.5;
+var RETRACTION_PREFIX = /^\s*(?:retracted(?:\s+article)?|withdrawn)\s*[:.\-–—]\s*/i;
 
 function verdict(score) {
   if (score >= AGREES) { return 'agrees'; }
@@ -530,6 +535,8 @@ function fromCrossref(m) {
     year: parts[0] || null,
     venue: (m['container-title'] || [])[0] || m.publisher || '',
     type: m.type || '',
+    page: m.page || '',
+    volume: m.volume || '',
     source: 'Crossref'
   };
 }
@@ -591,7 +598,7 @@ function byDoi(doi) {
 
 function searchCrossref(ref) {
   var url = CROSSREF + '?rows=3&select=DOI,title,author,issued,' +
-            'container-title,publisher,type&query.bibliographic=' +
+            'container-title,publisher,type,page,volume&query.bibliographic=' +
             encodeURIComponent(ref.slice(0, 400));
   return polite(url).then(function (d) {
     return ((d.message || {}).items || []).map(fromCrossref);
@@ -607,6 +614,67 @@ function searchEuropePmc(ref) {
   return get(url).then(function (d) {
     return (((d.resultList || {}).result) || []).map(fromEuropePmc);
   }).catch(function () { return []; });
+}
+
+/* The phrase in a reference that reads as its title, or null. A journal
+   is a phrase followed at once by a volume and pages; a title is a phrase
+   of four or more words that is not. Same test as the paid check. */
+function likelyTitle(ref) {
+  var after = String(ref || '').split(/\(\d{4}[a-z]?\)/);
+  var tail = (after.length > 1 ? after.slice(1).join(' ') : String(ref || ''))
+    .replace(/^[\s.,]+|[\s.,]+$/g, '');
+  var parts = tail.split(/[.;]/);
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i].trim();
+    if (/\d+\s*[:,]?\s*\d+\s*[-–—]?\s*\d*$/.test(part)) { continue; }
+    if ((part.match(/[A-Za-z]{2,}/g) || []).length >= 4) { return part; }
+  }
+  return null;
+}
+
+/* Same title and same year, and still two records: an article and the
+   letter answering it, or a reprint. The first page the reference gives
+   settles which one it means; the volume does when the record has none. */
+function locatorAgrees(rec, ref) {
+  var first = /^\s*([A-Za-z]?\d+)/.exec(String(rec.page || ''));
+  var token = first ? first[1] : String(rec.volume || '').trim();
+  if (!token) { return false; }
+  var esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^\\d])' + esc + '(?!\\d)').test(ref);
+}
+
+/* Title and year first, then the page range among records that agree on
+   both, then the closeness of the title. */
+function rankCandidates(candidates, ref, year) {
+  return candidates.map(function (c) {
+    var score = agreement(c.title, ref);
+    var solid = verdict(score) === 'agrees' && yearAgrees(year, c.year);
+    return { rec: c, score: score, solid: solid,
+             pinned: solid && locatorAgrees(c, ref) };
+  }).sort(function (a, b) {
+    if (a.solid !== b.solid) { return a.solid ? -1 : 1; }
+    if (a.pinned !== b.pinned) { return a.pinned ? -1 : 1; }
+    return b.score - a.score;
+  });
+}
+
+/* Machine-learning conference papers often have no DOI of their own, and
+   the arXiv copy is the record, registered at DataCite. Asked by title and
+   year only, because a whole reference string buried "Attention Is All You
+   Need" under uploads that borrow the famous title. */
+function searchArxiv(ref, year) {
+  var title = likelyTitle(ref);
+  if (!title) { return Promise.resolve([]); }
+  var query = 'titles.title:"' + title.replace(/["\\]/g, ' ').slice(0, 200) + '"';
+  if (year) { query += ' AND publicationYear:[' + (year - 1) + ' TO ' + (year + 1) + ']'; }
+  var url = DATACITE.replace(/\/$/, '') + '?client-id=arxiv.content&page%5Bsize%5D=3&query='
+          + encodeURIComponent(query);
+  return get(url).then(function (d) {
+    return (d.data || []).map(fromDataCite);
+  }).catch(function (err) {
+    if (err.busy) { throw err; }
+    return [];
+  });
 }
 
 function byIsbn(isbn) {
@@ -697,37 +765,20 @@ function checkOne(ref) {
         meant, so a candidate that agrees on both sorts ahead of one that
         agrees on the title alone.
       */
-      var scored = candidates.map(function (c) {
-        var score = agreement(c.title, ref);
-        return {
-          rec: c,
-          score: score,
-          solid: verdict(score) === 'agrees' && yearAgrees(year, c.year)
-        };
-      }).sort(function (a, b) {
-        if (a.solid !== b.solid) { return a.solid ? -1 : 1; }
-        return b.score - a.score;
-      });
+      var scored = rankCandidates(candidates, ref, year);
       var best = scored.length ? scored[0].rec : null;
       var bestScore = scored.length ? scored[0].score : 0;
-      if (best && verdict(bestScore) === 'agrees') {
+      if (scored.length && scored[0].solid) {
         result.found = best;
-        if (yearAgrees(year, best.year)) {
-          result.state = 'located';
-          result.says = 'No identifier was given in the reference. This is '
-                      + 'the record that matches it.';
-        } else {
-          result.state = 'review';
-          result.says = 'A record with this title exists, published in '
-                      + best.year + ' where the reference says ' + year
-                      + '. Duplicate records of the same title do circulate, '
-                      + 'so this is worth confirming before it is relied on.';
-        }
+        result.state = 'located';
+        result.says = 'No identifier was given in the reference. This is '
+                    + 'the record that matches it.';
         return result;
       }
       /* Crossref does not hold everything. Before concluding that a
-         reference describes nothing, ask the index that covers what
-         Crossref does not. */
+         reference describes nothing - or that a same-title record from
+         the wrong year is the one meant - ask the index that covers what
+         Crossref does not, then the arXiv record. */
       return searchEuropePmc(ref).then(function (more) {
         var alt = null, altScore = 0;
         more.forEach(function (c) {
@@ -739,6 +790,22 @@ function checkOne(ref) {
           result.state = 'located';
           result.says = 'No identifier was given in the reference. This is '
                       + 'the record that matches it.';
+          return result;
+        }
+        return searchArxiv(ref, year).then(function (preprints) {
+        var pre = rankCandidates(preprints, ref, year);
+        if (pre.length && pre[0].solid) {
+          result.found = pre[0].rec;
+          result.state = 'located';
+          result.says = 'No identifier was given in the reference. This is '
+                      + 'the record that matches it.';
+        } else if (best && verdict(bestScore) === 'agrees') {
+          result.found = best;
+          result.state = 'review';
+          result.says = 'A record with this title exists, published in '
+                      + best.year + ' where the reference says ' + year
+                      + '. Duplicate records of the same title do circulate, '
+                      + 'so this is worth confirming before it is relied on.';
         } else if (best && verdict(bestScore) === 'partial') {
           result.found = best;
           result.state = 'review';
@@ -761,6 +828,7 @@ function checkOne(ref) {
                       + 'of the indexes consulted.';
         }
         return result;
+        });
       });
     });
   }
