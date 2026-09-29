@@ -14,10 +14,13 @@ and heard nothing.
 ============================================================
 """
 
+import html
 import json
 import os
+import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API = os.environ["ORDERS_API"].rstrip("/")
@@ -79,7 +82,75 @@ def do_reference_check(payload):
     counts = {}
     for r in rows:
         counts[r["state"]] = counts.get(r["state"], 0) + 1
-    return {"kind": "reference-check", "counts": counts, "references": rows}
+    return {"kind": "reference-check", "counts": counts, "references": rows,
+            "bibliography": bibliography(rows)}
+
+
+# ── the corrected bibliography ────────────────────────────────
+
+#: (key, CSL style the DOI resolver knows, name on the page)
+STYLES = (("apa", "apa", "APA"),
+          ("mla", "modern-language-association", "MLA"),
+          ("chicago", "chicago-author-date", "Chicago"))
+
+#: Only a reference matched to its record goes in the fixed list. One that
+#: needs a look, points elsewhere or was not found stays out, and so does a
+#: retracted work: it is shown on the report and left to the writer.
+USABLE = ("confirmed", "located")
+
+
+def tidy(text):
+    """The resolver's output, made pasteable.
+
+    Seen in its answers on 2026-09-29: MLA prints an empty "edited by ,"
+    for every Crossref record and names Crossref as though it were a
+    database; DataCite answers with HTML entities and <i> tags."""
+    text = html.unescape(re.sub(r"<[^>]+>", "", text or ""))
+    # At the start of a sentence first ("Zion. Edited by , Dec."), then
+    # mid-sentence ("Econometrica, edited by , vol. 47").
+    text = re.sub(r"\.\s*Edited by\s*,\s*", ". ", text)
+    text = re.sub(r"(?i),\s*edited by\s*,", ",", text)
+    text = re.sub(r"([.,])\s*Crossref,\s*", r"\1 ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.replace(" ,", ",")
+
+
+def cite(doi, csl):
+    """One formatted entry for one DOI, from the DOI resolver itself, so
+    the wording comes from the record rather than from a guess."""
+    req = urllib.request.Request(
+        "https://doi.org/" + urllib.parse.quote(doi, safe="/()"),
+        headers={"Accept": "text/x-bibliography; style=" + csl,
+                 "User-Agent": "epistemend-runner (mailto:hello@epistemend.org)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return tidy(r.read().decode("utf-8", "replace"))
+
+
+def bibliography(rows):
+    """Every matched reference, in the order written, in three styles.
+
+    A DOI the resolver cannot format is listed by itself rather than
+    formatted by hand: an entry built from guesses is the thing this
+    report exists to catch."""
+    out = {key: [] for key, _, _ in STYLES}
+    out["unformatted"] = []
+    for row in rows:
+        doi = (row.get("found") or {}).get("doi")
+        if row.get("state") not in USABLE or not doi:
+            continue
+        try:
+            entries = {key: cite(doi, csl) for key, csl, _ in STYLES}
+        except (urllib.error.URLError, OSError, ValueError) as err:
+            print("  could not format {}: {}".format(doi, err), file=sys.stderr)
+            out["unformatted"].append(doi)
+            continue
+        if not all(entries.values()):
+            out["unformatted"].append(doi)
+            continue
+        for key, _, _ in STYLES:
+            out[key].append(entries[key])
+    out["styles"] = [[key, name] for key, _, name in STYLES]
+    return out
 
 
 def do_record_report(payload):
@@ -103,6 +174,11 @@ def headline(result):
         return ["The full record is in the report."]
     c = result["counts"]
     out = ["{} references read.".format(len(result["references"]))]
+    fixed = len((result.get("bibliography") or {}).get("apa") or [])
+    if fixed:
+        out.append("Your corrected bibliography is at the top of the report, "
+                   "{} entr{}, in APA, MLA and Chicago."
+                   .format(fixed, "y" if fixed == 1 else "ies"))
     for state in ("divergent", "unlocatable", "retracted"):
         if c.get(state):
             out.append("  {} {}".format(c[state], state))

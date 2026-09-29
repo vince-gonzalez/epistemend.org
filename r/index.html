@@ -100,6 +100,16 @@ a{color:var(--accent)}
   font:14px/1.7 var(--mono); white-space:pre-wrap; word-wrap:break-word;
 }
 .err{color:var(--warn); font-size:14px; margin:6px 0 14px}
+.styles{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 10px}
+.styles button[aria-pressed="true"]{
+  border-color:var(--accent); border-width:2px; font-weight:750; background:var(--panel2);
+}
+.copied{color:var(--ok); font-size:14px}
+.bib{
+  background:var(--panel2); border:1px solid var(--line); border-radius:6px;
+  padding:14px 16px; margin:0 0 14px;
+  font:15px/1.7 var(--sans); white-space:pre-wrap; word-wrap:break-word;
+}
 .note{
   background:var(--panel); border:1px solid var(--line2); border-radius:8px;
   padding:16px 18px; margin:30px 0 0; font-size:14px; color:var(--dim);
@@ -155,7 +165,8 @@ var API = 'https://orders.epistemend.org';
 var STATE = {
   token: '',
   result: null,
-  finished: null
+  finished: null,
+  style: ''          // the citation style showing in the corrected bibliography
 };
 
 /* Worst first. A report read from the top should open on what
@@ -253,6 +264,10 @@ function paintReferenceCheck(r) {
       'Nothing in this list is retracted, divergent or unlocatable.'));
   }
 
+  /* The fixed list comes first. It is the part that was paid for, and
+     the findings below it explain what was left out of it. */
+  paintBibliography(m, r.bibliography, rows.length);
+
   /* Grouped worst first, so the top of the page is the part that
      needs doing something about. */
   for (i = 0; i < seq.length; i++) {
@@ -324,6 +339,91 @@ function paintRecordReport(r) {
       m.appendChild(el('p', 'sub', 'Nothing to report here.'));
     }
   });
+}
+
+/* The corrected bibliography: every reference that matched its record,
+   rewritten from that record, in the order it was written, in each style
+   the runner produced. Reports made before this existed carry no
+   bibliography field and simply skip the section.
+   READS: nothing outside its arguments
+   WRITES: STATE.style */
+function paintBibliography(m, b, total) {
+  if (!b || !b.styles || !b.styles.length) { return; }
+  var first = b[b.styles[0][0]] || [];
+  m.appendChild(el('h2', null, 'Your corrected bibliography'));
+  if (!first.length) {
+    m.appendChild(el('p', 'sub',
+      'None of these references matched a record closely enough to rewrite. ' +
+      'Each one is listed below with what was found.'));
+    return;
+  }
+  var left = total - first.length;
+  m.appendChild(el('p', 'sub',
+    first.length + ' of ' + total + ' references, each rewritten from the ' +
+    'record it matched.' + (left ? ' The ' + left + ' left out are listed ' +
+    'below, with the reason each one needs a look.' : '')));
+
+  var bar = el('div', 'styles');
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', 'Citation style');
+  var box = el('div', 'bib');
+  box.setAttribute('aria-live', 'polite');
+  var copied = el('span', 'copied', '');
+  var buttons = [];
+
+  function show(key) {
+    box.textContent = (b[key] || []).join('\n\n');
+    buttons.forEach(function (btn) {
+      btn.setAttribute('aria-pressed',
+        btn.getAttribute('data-style') === key ? 'true' : 'false');
+    });
+    STATE.style = key;
+    copied.textContent = '';
+  }
+
+  function selectAll() {
+    var range = document.createRange();
+    range.selectNodeContents(box);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    copied.textContent = 'Selected. Press Ctrl+C to copy.';
+  }
+
+  b.styles.forEach(function (s) {
+    var btn = el('button', null, s[1]);
+    btn.setAttribute('data-style', s[0]);
+    btn.setAttribute('aria-pressed', 'false');
+    btn.addEventListener('click', function () { show(s[0]); });
+    buttons.push(btn);
+    bar.appendChild(btn);
+  });
+
+  var copy = el('button', null, 'Copy');
+  copy.addEventListener('click', function () {
+    try {
+      navigator.clipboard.writeText(box.textContent).then(
+        function () { copied.textContent = 'Copied.'; },
+        function (err) { console.error('copyBibliography:', err); selectAll(); });
+    } catch (err) {
+      console.error('copyBibliography:', err);
+      selectAll();
+    }
+  });
+  bar.appendChild(copy);
+  bar.appendChild(copied);
+  m.appendChild(bar);
+  m.appendChild(box);
+
+  if (b.unformatted && b.unformatted.length) {
+    m.appendChild(el('p', 'err',
+      b.unformatted.length + ' matched ' +
+      (b.unformatted.length === 1 ? 'reference' : 'references') +
+      ' could not be formatted by the DOI resolver and ' +
+      (b.unformatted.length === 1 ? 'is' : 'are') +
+      ' left out of the list above: ' + b.unformatted.join(', ')));
+  }
+  show(b.styles[0][0]);
 }
 
 function paintTail() {
