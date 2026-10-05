@@ -31,7 +31,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install the engine
-        run: pip install --quiet "authorecon @ git+https://github.com/vince-gonzalez/apriori@main"
+        # [pdf] pulls in pypdf. Without it the Record Report opened every
+        # deposited file, read none, and reported "no readable file".
+        run: pip install --quiet "authorecon[pdf] @ git+https://github.com/vince-gonzalez/apriori@main"
 
       - name: Work the queue
         env:
