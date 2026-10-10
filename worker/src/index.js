@@ -416,13 +416,31 @@ async function stripeHook(request, env) {
 
   const event = JSON.parse(raw);
 
-  /* Delivered twice is delivered once. */
-  const seen = await env.DB.prepare('SELECT id FROM stripe_events WHERE id = ?')
-    .bind(event.id).first();
-  if (seen) { return json({ ok: true, repeated: true }); }
-  await env.DB.prepare(
-    'INSERT INTO stripe_events (id, kind, seen_at) VALUES (?, ?, ?)'
-  ).bind(event.id, event.type, now()).run();
+  /* Delivered twice is delivered once, and THE INSERT IS WHAT DECIDES.
+     This used to SELECT, return early if the row was there, and INSERT
+     otherwise. Two concurrent deliveries of the same event - which is
+     what Stripe produces when it does not get a timely 200 - both find
+     nothing, both insert, and the second one hits the PRIMARY KEY on
+     stripe_events and throws. stripeHook has no try/catch, so that
+     became a 500, and Stripe reads a 500 as a failed delivery and
+     retries. By then the first request had already marked the order
+     paid and queued the job, so the retry storm was against an event
+     that had been processed correctly.
+
+     Insert first and let the constraint arbitrate. Exactly one request
+     can win it, the loser learns it lost, and the whole thing is one
+     query instead of two in the ordinary case. Only a uniqueness
+     violation is swallowed; any other database error still throws,
+     because a real failure here must not look like a duplicate. */
+  try {
+    await env.DB.prepare(
+      'INSERT INTO stripe_events (id, kind, seen_at) VALUES (?, ?, ?)'
+    ).bind(event.id, event.type, now()).run();
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    if (!/UNIQUE constraint failed/i.test(msg)) throw err;
+    return json({ ok: true, repeated: true });
+  }
 
   if (event.type !== 'checkout.session.completed') {
     return json({ ok: true, ignored: event.type });
