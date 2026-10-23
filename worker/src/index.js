@@ -38,12 +38,12 @@ const TERMS_VERSION = '2026-09-07';
 
 const SKUS = {
   'reference-check': {
-    amount: 500,
+    amount: 199,
     name: 'Reference Check',
     blurb: 'Every reference resolved, and every link followed'
   },
   'record-report': {
-    amount: 2500,
+    amount: 999,
     name: 'Record Report',
     blurb: 'A full sweep of one author’s published record'
   }
