@@ -50,6 +50,21 @@ const SKUS = {
 };
 
 const SITE = 'https://www.epistemend.org';
+
+/* The checker is served from authorecon.f-keys.com as well as the old
+   epistemend.org during the move. A browser request is answered with its
+   own origin when that origin is one of ours, so checkout works from
+   either page. The Stripe webhook is server-to-server and never comes
+   through here, so it is untouched. */
+const ORIGINS = new Set([
+  'https://authorecon.f-keys.com',
+  'https://www.epistemend.org',
+  'https://epistemend.org'
+]);
+const allowOrigin = (request) =>
+  ORIGINS.has(request.headers.get('Origin'))
+    ? request.headers.get('Origin') : SITE;
+
 const MAX_ATTEMPTS = 3;
 
 /* ── small helpers ───────────────────────────────────────── */
@@ -394,14 +409,14 @@ async function checkout(request, env) {
     customer_email: email,
     client_reference_id: orderId,
     'metadata[order_id]': orderId,
-    success_url: SITE + '/order/thanks/?order=' + orderId,
-    cancel_url: SITE + '/order/?canceled=1'
+    success_url: allowOrigin(request) + '/order/thanks/?order=' + orderId,
+    cancel_url: allowOrigin(request) + '/order/?canceled=1'
   });
 
   await env.DB.prepare('UPDATE orders SET stripe_session = ? WHERE id = ?')
     .bind(session.id, orderId).run();
 
-  return json({ order: orderId, url: session.url });
+  return json({ order: orderId, url: session.url }, 200, allowOrigin(request));
 }
 
 /* ── the payment clears ──────────────────────────────────── */
@@ -744,7 +759,7 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         headers: {
-          'Access-Control-Allow-Origin': SITE,
+          'Access-Control-Allow-Origin': allowOrigin(request),
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, X-Runner-Key',
           'Access-Control-Max-Age': '86400'

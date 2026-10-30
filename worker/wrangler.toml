@@ -30,4 +30,4 @@ GITHUB_REPO = "vince-gonzalez/epistemend.org"
 OPERATOR_EMAIL = "hello@epistemend.org"
 # Where the Turnstile widget is SOLVED - the site, not this worker.
 # Never add localhost here: this file is the deployed configuration.
-TURNSTILE_HOSTNAMES = "www.epistemend.org,epistemend.org"
+TURNSTILE_HOSTNAMES = "www.epistemend.org,epistemend.org,authorecon.f-keys.com"
