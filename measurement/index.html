@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Measurement — Epistemend</title>
+<meta name="description" content="Platform-measurement harnesses by Vince Gonzalez: Cloudflare KV staleness, D1 replica lag and write ceilings, Durable Object placement, colour-plate delivery.">
+<meta name="author" content="Vince Gonzalez">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://epistemend.org/measurement/">
+<link rel="stylesheet" href="/assets/mac.css">
+</head>
+<body>
+<div class="menubar">
+  <span class="mark chicago">&#8251;</span>
+  <a class="chicago" href="/">Epistemend</a>
+  <a href="/papers/">Papers</a>
+  <a href="/programs/">Programs</a>
+  <a class="on" href="/measurement/">Measurement</a>
+  <a href="/record/">Record</a>
+  <a href="/cv/">CV</a>
+  <span class="right chicago">Research</span>
+</div>
+<div class="desktop">
+  <section class="win wide" aria-label="Measurement">
+  <div class="titlebar"><span class="closebox" aria-hidden="true"></span><span class="title chicago">Measurement</span></div>
+  <div class="body"><div class="doc">
+<p class="kicker">Measurement</p>
+<h1>What the platform actually does</h1>
+<p class="intro">Documentation describes the limits one at a time and does not say how they interact. These harnesses measure the behaviour from outside and publish the raw data &mdash; the reproducible half of the research.</p>
+<p class="by">Vince Gonzalez &middot; <a href="https://orcid.org/0009-0005-3640-014X" rel="noopener">ORCID 0009-0005-3640-014X</a></p>
+<h3><a href="https://github.com/vince-gonzalez/kv-bench" rel="noopener">kv-bench</a></h3>
+<p class="abs">Cross-region staleness in Cloudflare Workers KV: how long a read keeps serving the old value after a write, and how that window scales with the cacheTtl you set. Timed from a clock outside the edge, reproducible, and archived with a DOI.</p>
+<h3><a href="https://github.com/vince-gonzalez/d1-replica-bench" rel="noopener">d1-replica-bench</a></h3>
+<p class="abs">Read-replica lag in Cloudflare D1: after a primary write, how long a replica in another region can still answer stale. Sub-round-trip in practice &mdash; and the finding that replicas are traffic-provisioned, not toggle-provisioned, published alongside the poll-scheduling correction that got there.</p>
+<h3><a href="https://github.com/vince-gonzalez/locationhint-bench" rel="noopener">locationhint-bench</a></h3>
+<p class="abs">Where a Durable Object actually lands when you ask for a region. Three of the documented location hints never reach their named region; placement is verified by trace rather than assumed.</p>
+<h3><a href="https://github.com/vince-gonzalez/d1bench" rel="noopener">d1bench</a></h3>
+<p class="abs">Which D1 bulk-write strategy wins, and which limit stops you first. A single <code>batch()</code> took 150,000 statements without refusal &mdash; the real ceiling is a thirty-second time budget, not a statement count &mdash; and literal SQL runs 2.7&times; faster at 64 columns until a row passes the statement-length limit and it stops being expressible at all. The upstream documentation was corrected from this measurement.</p>
+<h3><a href="https://github.com/vince-gonzalez/plateaudit" rel="noopener">plateaudit</a></h3>
+<p class="abs">Measuring pseudoisochromatic colour-vision plates from the stimulus a browser actually delivers, rather than the one the generator intended.</p>
+<p class="back">The business &mdash; software, websites and the tools that check them &mdash; is at <a href="https://f-keys.com" rel="noopener">f-keys.com</a>.</p>
+</div></div>
+</section>
+</div>
+</body>
+</html>

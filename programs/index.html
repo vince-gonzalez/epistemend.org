@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Programs — Epistemend</title>
+<meta name="description" content="Research programs by Vince Gonzalez: axiom hygiene, set.mm contributions, certified bounds in discrete geometry, integer sequences, the Kernel Index.">
+<meta name="author" content="Vince Gonzalez">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://epistemend.org/programs/">
+<link rel="stylesheet" href="/assets/mac.css">
+</head>
+<body>
+<div class="menubar">
+  <span class="mark chicago">&#8251;</span>
+  <a class="chicago" href="/">Epistemend</a>
+  <a href="/papers/">Papers</a>
+  <a class="on" href="/programs/">Programs</a>
+  <a href="/measurement/">Measurement</a>
+  <a href="/record/">Record</a>
+  <a href="/cv/">CV</a>
+  <span class="right chicago">Research</span>
+</div>
+<div class="desktop">
+  <section class="win wide" aria-label="Programs">
+  <div class="titlebar"><span class="closebox" aria-hidden="true"></span><span class="title chicago">Programs</span></div>
+  <div class="body"><div class="doc">
+<p class="kicker">Programs</p>
+<h1>The research behind the papers</h1>
+<p class="intro">Each paper comes out of a standing program. These are the questions the work keeps returning to, and the tools built to answer them.</p>
+<p class="by">Vince Gonzalez &middot; <a href="https://orcid.org/0009-0005-3640-014X" rel="noopener">ORCID 0009-0005-3640-014X</a></p>
+<h2>Axiom hygiene</h2>
+<p>A proof assistant records what a theorem <em>reaches</em>, not what it
+<em>needs</em>. The axiom-hygiene program measures the difference &mdash; what a
+machine-checked result actually rests on, read from the source rather than
+assumed &mdash; and removes the assumptions a theorem was paying for and did not
+use.</p>
+<p>The dominator analysis over 766,564 constants found that reachability
+overstates responsibility by up to 58&times;, and that 60.1% of classically
+dependent theorems have no single constant responsible for the dependence at
+all. In Lean's Mathlib the removable classical dependence has a measured ceiling
+of 13.1%, and an avoidable classical dependency sits inside <code>omega</code>
+itself.</p>
+<p>The instrument is <a href="https://f-keys.com/gonzalgo/" rel="noopener">gonzalgo</a>,
+an axiom-provenance auditor for Lean 4 and Metamath; the repairs it finds are
+contributed upstream.</p>
+<h2>set.mm contributions</h2>
+<p>Where the analysis finds an avoidable axiom use, the construction half writes
+the replacement proof and verifies it. Those repairs are merged into
+<a href="https://github.com/metamath/set.mm" rel="noopener">metamath/set.mm</a>
+and the Metamath executable, removing a dependence rather than only reporting
+it.</p>
+<h2>Certified bounds in discrete geometry</h2>
+<p>Machine-checked upper and lower bounds for covering, packing and opacity
+problems &mdash; results where a published bound has to survive someone
+re-running it on different hardware. The arithmetic is carried in a certified
+enclosure rather than a float, so a computed inequality becomes a proof. The
+deposited results include a certified upper bound for the Fejes T&oacute;th
+point-goalie problem at n = 4 and the maximality of the added-vector codes in
+the Cohn&ndash;Li kissing construction.</p>
+<h2>Integer sequences (OEIS)</h2>
+<p>Sequences contributed to the On-Line Encyclopedia of Integer Sequences under
+the name Vincent Gonzalez: <a href="https://oeis.org/A398262" rel="noopener">A398262</a>
+published, with A398309 and A398310 in review, each linked to the paper it comes
+from.</p>
+<h2>The Kernel Index</h2>
+<p>A standing, machine-readable measurement of what fourteen formal libraries
+across six foundations rest on &mdash; recomputed rather than quoted, and
+published CC&nbsp;BY so the numbers can be checked against the libraries
+themselves.</p>
+<p class="back">The business &mdash; software, websites and the tools that check them &mdash; is at <a href="https://f-keys.com" rel="noopener">f-keys.com</a>.</p>
+</div></div>
+</section>
+</div>
+</body>
+</html>
